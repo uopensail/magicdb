@@ -3,43 +3,18 @@ package config
 import (
 	"encoding/json"
 	"github.com/BurntSushi/toml"
+	fconfig "github.com/uopensail/fuku-core/config"
 	"github.com/uopensail/ulib/commonconfig"
 	"github.com/uopensail/ulib/zlog"
 	"go.uber.org/zap"
 	"io/ioutil"
 )
 
-type DataType int
-
-const (
-	StringType DataType = iota + 1
-	StringListType
-	Int64Type
-	Int64ListType
-	Float32Type
-	Float32ListType
-)
-
-//ServiceConfig 定义服务的一些配置结构
-type ServiceConfig struct {
-	PProfPort   int    `json:"pprof_port" yaml:"pprof_port" toml:"pprof_port"`
-	PromePort   int    `json:"prome_port" yaml:"prome_port" toml:"prome_port"`
-	Debug       bool   `json:"debug" yaml:"debug" toml:"debug"`
-	ServiceName string `json:"service_name" yaml:"service_name" toml:"service_name"`
-	GRPCPort    int    `json:"grpc_port" yaml:"grpc_port" toml:"grpc_port"`
-	HTTPPort    int    `json:"http_port" yaml:"http_port" toml:"http_port"`
-	LogPath     string `json:"log_path" yaml:"log_path" toml:"log_path"`
-}
-
-type Feature struct {
-	Type DataType `json:"type" toml:"type"`
-	Sep  string   `json:"sep" toml:"sep"`
-}
 type MagicDBConfig struct {
-	Name       string             `json:"name" toml:"name"`
-	Partitions []string           `json:"partitions" toml:"partitions"`
-	Version    int64              `json:"versions" toml:"versions"`
-	Features   map[string]Feature `json:"features" toml:"features"`
+	Name       string                     `json:"name" toml:"name"`
+	Partitions []string                   `json:"partitions" toml:"partitions"`
+	Version    int64                      `json:"versions" toml:"versions"`
+	Features   map[string]fconfig.Feature `json:"features" toml:"features"`
 }
 
 func (mc *MagicDBConfig) Init(filepath string) bool {

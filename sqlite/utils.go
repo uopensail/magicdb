@@ -1,31 +1,31 @@
 package sqlite
 
 import (
+	fconfig "github.com/uopensail/fuku-core/config"
 	"github.com/uopensail/ulib/sample"
 	"github.com/uopensail/ulib/utils"
-	"magicdb/config"
 	"strings"
 )
 
-func getSampleFeature(v interface{}, fea *config.Feature) *sample.Feature {
+func getSampleFeature(v interface{}, fea *fconfig.Feature) *sample.Feature {
 	var foo func(v interface{}, sep string) *sample.Feature
-	switch fea.Type {
-	case config.Float32ListType:
+	switch fea.DataType {
+	case fconfig.Float32ListType:
 		foo = getFloat32ListFromStr
 		break
-	case config.Int64ListType:
+	case fconfig.Int64ListType:
 		foo = getInt64ListFromStr
 		break
-	case config.Float32Type:
+	case fconfig.Float32Type:
 		foo = getFloat32FromStr
 		break
-	case config.Int64Type:
+	case fconfig.Int64Type:
 		foo = getInt64FromStr
 		break
-	case config.StringListType:
+	case fconfig.StringListType:
 		foo = getStrListFromStr
 		break
-	case config.StringType:
+	case fconfig.StringType:
 		foo = getStrFromStr
 		break
 	default:

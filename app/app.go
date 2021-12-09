@@ -19,8 +19,6 @@ func NewApp() *App {
 
 func (app *App) GRPCAPIRegister(s *grpc.Server) {
 	api.RegisterFuKuServer(s, app)
-	//注册健康检查
-	//grpc_health_v1.RegisterHealthServer(s, app)
 }
 
 func (app *App) EchoAPIRegister(e *echo.Echo) {
@@ -33,6 +31,12 @@ func (app *App) Get(ctx context.Context, in *api.FuKuRequest) (*api.FuKuResponse
 	stat := prome.NewStat("App.Get")
 	defer stat.End()
 	response := &api.FuKuResponse{}
+	userID := in.GetUserID()
+	if len(userID) == 0 {
+		response.Msg = "user id empty"
+		response.Code = 404
+		return response, nil
+	}
 	features := manager.Implementation.Get(in.GetUserID())
 	if features == nil {
 		stat.MarkErr()
@@ -68,13 +72,3 @@ func (app *App) PingEchoHandler(c echo.Context) (err error) {
 func (app *App) VersionEchoHandler(c echo.Context) (err error) {
 	return c.JSON(200, __GITHASH__)
 }
-
-//func (app *App) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
-//	return &grpc_health_v1.HealthCheckResponse{
-//		Status: grpc_health_v1.HealthCheckResponse_SERVING,
-//	}, nil
-//}
-//
-//func (app *App) Watch(req *grpc_health_v1.HealthCheckRequest, server grpc_health_v1.Health_WatchServer) error {
-//	return server.Send(&grpc_health_v1.HealthCheckResponse{Status: grpc_health_v1.HealthCheckResponse_SERVING})
-//}

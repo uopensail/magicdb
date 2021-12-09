@@ -11,8 +11,8 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.8
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spaolacci/murmur3 v1.1.0
-	github.com/uopensail/fuku-core v0.0.0-20210912061104-01811156dfc9
-	github.com/uopensail/ulib v0.0.14
+	github.com/uopensail/fuku-core v0.0.0-20211126010022-f6eaaacdbde7
+	github.com/uopensail/ulib v0.0.15
 	go.uber.org/zap v1.19.1
 	google.golang.org/grpc v1.39.0
 )

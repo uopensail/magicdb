@@ -382,9 +382,13 @@ github.com/tidwall/pretty v1.0.0/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhV
 github.com/tmc/grpc-websocket-proxy v0.0.0-20170815181823-89b8d40f7ca8/go.mod h1:ncp9v5uamzpCO7NfCPTXjqaC+bZgJeR0sMTm6dMHP7U=
 github.com/uopensail/fuku-core v0.0.0-20210912061104-01811156dfc9 h1:BJgFPveff2jxP461UujviHd4Zg5Mb2dNnz6cw8wt+6w=
 github.com/uopensail/fuku-core v0.0.0-20210912061104-01811156dfc9/go.mod h1:U7u4QvF02l8hLO2xbh/ypRMIwhKdFHfhabIsjCKrHUM=
+github.com/uopensail/fuku-core v0.0.0-20211126010022-f6eaaacdbde7 h1:m8K/ErIOOfiF58wUgd+qLOGvAayFcB15QfAbNNDP1/s=
+github.com/uopensail/fuku-core v0.0.0-20211126010022-f6eaaacdbde7/go.mod h1:U7u4QvF02l8hLO2xbh/ypRMIwhKdFHfhabIsjCKrHUM=
 github.com/uopensail/ulib v0.0.12/go.mod h1:mrCaNbv8GHxikOQQdYWbWVIiAockN5KMXHyECv0ZUs4=
 github.com/uopensail/ulib v0.0.14 h1:qqoB6ZHPsQsQ2C2moayF3kBt0u9goBoAXoLK6WNl/Cw=
 github.com/uopensail/ulib v0.0.14/go.mod h1:mrCaNbv8GHxikOQQdYWbWVIiAockN5KMXHyECv0ZUs4=
+github.com/uopensail/ulib v0.0.15 h1:Ftqbxeh065j6o6gYZuR0gmWh0pyXgIs3XeG88ESRxBw=
+github.com/uopensail/ulib v0.0.15/go.mod h1:mrCaNbv8GHxikOQQdYWbWVIiAockN5KMXHyECv0ZUs4=
 github.com/urfave/cli v1.20.0/go.mod h1:70zkFmudgCuE/ngEzBv17Jvp/497gISqfk5gWijbERA=
 github.com/urfave/cli v1.22.1/go.mod h1:Gos4lmkARVdJ6EkW0WaNv/tZAAMe9V7XWyB60NtXRu0=
 github.com/valyala/bytebufferpool v1.0.0 h1:GqA5TC/0021Y/b9FG4Oi9Mr3q7XYx6KllzawFIhcdPw=

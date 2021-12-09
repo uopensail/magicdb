@@ -73,7 +73,6 @@ func (c *client) get(key string) *sample.Features {
 		if feature != nil {
 			ret.Feature[col] = feature
 		}
-
 	}
 	return ret
 }
