@@ -83,6 +83,7 @@ func (f *Features) Marshal() []byte {
 
 func NewCache(path string) *Cache {
 	opt := grocksdb.NewDefaultBlockBasedTableOptions()
+	opt.SetBlockCache(grocksdb.NewLRUCache(100000))
 	opts := grocksdb.NewDefaultOptions()
 	opts.SetBlockBasedTableFactory(opt)
 	opts.SetCreateIfMissing(true)

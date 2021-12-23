@@ -51,15 +51,29 @@ func Register(cfg commonconfig.DownloaderConfig,
 	if cfg.Interval > 0 {
 		interval = cfg.Interval
 	}
-	myFinder := finder.GetFinder(&cfg.FinderConfig)
-	magicConfig := checkLocalDataCompleteness(cfg.LocalPath)
-	if magicConfig == nil {
-		magicConfig = tryDownload(myFinder, cfg)
-	}
 
+	magicConfig := checkLocalDataCompleteness(cfg.LocalPath)
+	myFinder := finder.GetFinder(&cfg.FinderConfig)
 	if magicConfig == nil {
-		zlog.LOG.Error("Register.magicConfig is nil")
-		return ""
+		remoteEtag := myFinder.GetETag(cfg.SourcePath)
+		remoteUpdateTime := myFinder.GetUpdateTime(cfg.SourcePath)
+		if len(remoteEtag) == 0 || remoteUpdateTime == 0 {
+			zlog.LOG.Error("Remote Etag or UpdateTime nil",
+				zap.String("SourcePath", cfg.SourcePath))
+			return ""
+		}
+		magicConfig = tryDownload(myFinder, cfg)
+		if magicConfig == nil {
+			zlog.LOG.Error("Register.magicConfig is nil")
+			return ""
+		}
+		newInfo := Info{
+			Key:        magicConfig.Name,
+			Etag:       remoteEtag,
+			UpdateTime: remoteUpdateTime,
+		}
+		//更新新的info
+		ManagerImp.Center.Upset(magicConfig.Name, &newInfo)
 	}
 
 	table := factory(magicConfig, createParams)
@@ -80,7 +94,7 @@ func Register(cfg commonconfig.DownloaderConfig,
 		if oldJob == nil {
 			return
 		}
-		ticker := time.NewTicker(time.Second * time.Duration(job.Interval))
+		ticker := time.NewTicker(time.Second * time.Duration(oldJob.Interval))
 		defer ticker.Stop()
 		for {
 			<-ticker.C
@@ -142,8 +156,17 @@ func getJob(key string) *Job {
 //checkLocalDataCompleteness 检查本地数据的完整性
 func checkLocalDataCompleteness(localPath string) *config.MagicDBConfig {
 	localMagicMeta := &config.MagicDBConfig{}
+	//先检查本地的local的meta信息
 	status := localMagicMeta.Init(filepath.Join(localPath, "local"))
 	if !status {
+		zlog.LOG.Error("checkLocalDataCompleteness.MagicDBConfig.Init",
+			zap.String("localPath", filepath.Join(localPath, "local")))
+		return nil
+	}
+
+	info := ManagerImp.Center.Get(localMagicMeta.Name)
+	if info == nil {
+		zlog.LOG.Error("checkLocalDataCompleteness.Center.Get")
 		return nil
 	}
 	isFileExistFunc := func(path string) bool {
@@ -156,15 +179,16 @@ func checkLocalDataCompleteness(localPath string) *config.MagicDBConfig {
 			return nil
 		}
 	}
+
 	return localMagicMeta
 }
 
 //tryDownload 下载文件
-func tryDownload(finder finder.IFinder, cfg commonconfig.DownloaderConfig) *config.MagicDBConfig {
+func tryDownload(myfinder finder.IFinder, cfg commonconfig.DownloaderConfig) *config.MagicDBConfig {
 	stat := prome.NewStat("updater.tryDownload")
 	defer stat.End()
 	tmpPath := filepath.Join(cfg.LocalPath, "remote")
-	size, err := finder.Download(cfg.SourcePath, tmpPath)
+	size, err := myfinder.Download(cfg.SourcePath, tmpPath)
 	if size == 0 || err != nil {
 		stat.MarkErr()
 		zlog.LOG.Error("tryDownload.Download",
@@ -193,7 +217,7 @@ func tryDownload(finder finder.IFinder, cfg commonconfig.DownloaderConfig) *conf
 	}
 	for i := 0; i < len(remoteMagicConfig.Partitions); i++ {
 		localMagicMeta.Partitions[i] = filepath.Join(localDataPath, fmt.Sprintf("%d.db", i))
-		size, err = finder.Download(remoteMagicConfig.Partitions[i], localMagicMeta.Partitions[i])
+		size, err = myfinder.Download(remoteMagicConfig.Partitions[i], localMagicMeta.Partitions[i])
 		if size == 0 || err != nil {
 			zlog.LOG.Error("tryDownload.Download",
 				zap.String("remotePath", remoteMagicConfig.Partitions[i]),
@@ -226,6 +250,13 @@ func tryDownloadIfNeed(key string, finder finder.IFinder, cfg commonconfig.Downl
 	}
 	//以远程的数据为准
 	if info == nil || remoteEtag != info.Etag || remoteUpdateTime > info.UpdateTime {
+		newInfo := Info{
+			Key:        key,
+			Etag:       remoteEtag,
+			UpdateTime: remoteUpdateTime,
+		}
+		//更新新的info
+		ManagerImp.Center.Upset(key, &newInfo)
 		return tryDownload(finder, cfg)
 	}
 	return nil
