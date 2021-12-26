@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/robfig/cron/v3"
 	"github.com/uopensail/ulib/prome"
 	"github.com/uopensail/ulib/zlog"
 	"google.golang.org/grpc"
@@ -22,7 +21,6 @@ func init() {
 	flag.Parse()
 	config.AppConfigImp.Init(*configPath)
 	manager.Init()
-	crontab()
 }
 
 func runGRPC() {
@@ -60,14 +58,6 @@ func runHttp() {
 	e.Use(middleware.Recover())
 	app.EchoAPIRegister(e)
 	e.Logger.Fatal(e.Start(fmt.Sprintf(":%d", config.AppConfigImp.HTTPPort)))
-}
-
-//crontab 定时任务
-func crontab() {
-	spec := "* * */7 * * *"
-	c := cron.New(cron.WithSeconds())
-	c.AddFunc(spec, manager.Implementation.Clean)
-	c.Start()
 }
 
 func main() {
