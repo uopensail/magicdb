@@ -1,34 +1,41 @@
 package manager
 
 import (
+	"github.com/bluele/gcache"
 	"github.com/uopensail/ulib/prome"
 	"github.com/uopensail/ulib/sample"
-	"magicdb/cache"
 	"magicdb/config"
 	"magicdb/sqlite"
 	"sync"
+	"time"
 )
 
 type Manager struct {
-	cache   *cache.Cache
-	clients map[string]*sqlite.Client
+	cache    gcache.Cache
+	ttl      int
+	capacity int
+	clients  map[string]*sqlite.Client
+}
+
+//cacheRecord 内部的特征结构
+type cacheRecord struct {
+	values   *sample.Features
+	versions map[string]int64
 }
 
 func Init() {
 	Implementation.clients = make(map[string]*sqlite.Client)
-	Implementation.cache = cache.NewCache(config.AppConfigImp.RockDBPath)
+	Implementation.ttl = config.AppConfigImp.TTL
+	Implementation.capacity = config.AppConfigImp.CacheSize
+	Implementation.cache = gcache.New(Implementation.capacity).LRU().Build()
+
 	for key, cfg := range config.AppConfigImp.Sources {
 		Implementation.clients[key] = sqlite.NewClient(cfg)
 	}
 }
 
-func (m *Manager) Clean() {
-	stat := prome.NewStat("Manager.Clean")
-	defer stat.End()
-	m.cache.Delete()
-}
-
-func (m *Manager) getAll(userID string) *sample.Features {
+//getFromAllSqlites 从所有的sqlite中获取信息
+func (m *Manager) getFromAllSqlites(userID string) *sample.Features {
 	stat := prome.NewStat("Manager.getAll")
 	defer stat.End()
 	stat.SetCounter(len(m.clients))
@@ -56,8 +63,8 @@ func (m *Manager) getAll(userID string) *sample.Features {
 	return ret
 }
 
-func (m *Manager) getPartial(userID string, names []string) *sample.Features {
-	stat := prome.NewStat("Manager.getPartial")
+func (m *Manager) getFromPartialSqlites(userID string, names []string) *sample.Features {
+	stat := prome.NewStat("Manager.getFromPartialSqlites")
 	defer stat.End()
 	stat.SetCounter(len(names))
 	var wg sync.WaitGroup
@@ -86,7 +93,9 @@ func (m *Manager) getPartial(userID string, names []string) *sample.Features {
 
 func (m *Manager) Get(userID string) *sample.Features {
 	stat := prome.NewStat("Manager.Get")
+	hit := prome.NewStat("Manager.Cache.Hit")
 	defer stat.End()
+	defer hit.End()
 
 	//获得每一个client的版本号
 	clientVersions := make(map[string]int64)
@@ -94,19 +103,26 @@ func (m *Manager) Get(userID string) *sample.Features {
 		clientVersions[name] = client.GetVersion()
 	}
 
-	cachedFeatures := Implementation.cache.Get(userID)
-	if cachedFeatures == nil {
-		//全部去查询
-		features := m.getAll(userID)
-		cachedFeatures = m.cache.NewFeatures(features, clientVersions)
-		m.cache.Save(userID, cachedFeatures.Marshal())
+	value, err := Implementation.cache.Get(userID)
+
+	if err != nil {
+		hit.MarkErr()
+		features := m.getFromAllSqlites(userID)
+		record := &cacheRecord{
+			values:   features,
+			versions: clientVersions,
+		}
+		m.cache.SetWithExpire(userID, record, time.Duration(m.ttl)*time.Second)
 		return features
 	}
 
 	//获得需要更新的特征列表
 	needUpdateClients := make([]string, 0, 10)
 	for name, version := range clientVersions {
-		tmpVersion := cachedFeatures.GetClientVersion(name)
+		tmpVersion, ok := value.(*cacheRecord).versions[name]
+		if !ok {
+			needUpdateClients = append(needUpdateClients, name)
+		}
 		if tmpVersion < version {
 			needUpdateClients = append(needUpdateClients, name)
 		}
@@ -114,18 +130,26 @@ func (m *Manager) Get(userID string) *sample.Features {
 
 	if len(needUpdateClients) > 0 {
 		//部分更新特征
-		partialFeatures := m.getPartial(userID, needUpdateClients)
+		partialFeatures := m.getFromPartialSqlites(userID, needUpdateClients)
+		ret := &sample.Features{Feature: make(map[string]*sample.Feature)}
+		for k, v := range value.(*cacheRecord).values.Feature {
+			ret.Feature[k] = v
+		}
+
 		if partialFeatures != nil {
 			for k, v := range partialFeatures.Feature {
-				cachedFeatures.UpdateFeature(k, v)
+				ret.Feature[k] = v
 			}
 		}
-		//cache里面的值需要更新
-		cachedFeatures.UpdateVersions(clientVersions)
-		m.cache.Save(userID, cachedFeatures.Marshal())
+		record := &cacheRecord{
+			values:   ret,
+			versions: clientVersions,
+		}
+		m.cache.SetWithExpire(userID, record, time.Duration(m.ttl)*time.Second)
+		return ret
+	} else {
+		return value.(*cacheRecord).values
 	}
-
-	return cachedFeatures.GetValues()
 }
 
 var Implementation Manager

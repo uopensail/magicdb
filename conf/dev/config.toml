@@ -2,9 +2,10 @@ project_name = "magicdb_server"
 grpc_port = 9527
 http_port = 9528
 prome_port = 9529
-log_path = "/tmp/"
 debug = true
-rocksdb = "1111"
+cache_ttl = 10000
+cache_size = 100000
+log_path = '/tmp/'
 
 #[sources]
 #[sources.test123]

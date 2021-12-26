@@ -48,7 +48,8 @@ func (mc *MagicDBConfig) Dump(filepath string) bool {
 type AppConfig struct {
 	commonconfig.ServerConfig `json:",inline" toml:",inline"`
 	Sources                   map[string]commonconfig.DownloaderConfig `json:"sources" toml:"sources"`
-	RockDBPath                string                                   `json:"rocksdb" toml:"rocksdb"`
+	TTL                       int                                      `json:"cache_ttl" toml:"cache_ttl"`
+	CacheSize                 int                                      `json:"cache_size" toml:"cache_size"`
 	LogPath                   string                                   `json:"log_path" toml:"log_path"`
 }
 
