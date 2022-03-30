@@ -1,10 +1,11 @@
 package sqlite
 
 import (
+	"strings"
+
 	fconfig "github.com/uopensail/fuku-core/config"
 	"github.com/uopensail/ulib/sample"
 	"github.com/uopensail/ulib/utils"
-	"strings"
 )
 
 func getSampleFeature(v interface{}, fea *fconfig.Feature) *sample.Feature {

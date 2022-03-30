@@ -2,12 +2,13 @@ package config
 
 import (
 	"encoding/json"
+	"io/ioutil"
+
 	"github.com/BurntSushi/toml"
 	fconfig "github.com/uopensail/fuku-core/config"
 	"github.com/uopensail/ulib/commonconfig"
 	"github.com/uopensail/ulib/zlog"
 	"go.uber.org/zap"
-	"io/ioutil"
 )
 
 type MagicDBConfig struct {
@@ -15,6 +16,12 @@ type MagicDBConfig struct {
 	Partitions []string                   `json:"partitions" toml:"partitions"`
 	Version    int64                      `json:"versions" toml:"versions"`
 	Features   map[string]fconfig.Feature `json:"features" toml:"features"`
+}
+
+type EtdcConfig struct {
+	Address []string `json:"address" toml:"address"`
+	Filed   string   `json:"filed" toml:"filed"`
+	TTL     int      `json:"ttl" toml:"ttl"`
 }
 
 func (mc *MagicDBConfig) Init(filepath string) bool {
@@ -47,8 +54,9 @@ func (mc *MagicDBConfig) Dump(filepath string) bool {
 
 type AppConfig struct {
 	commonconfig.ServerConfig `json:",inline" toml:",inline"`
+	Etcdconfig                EtdcConfig                               `json:"etcd" toml:"etcd"`
 	Sources                   map[string]commonconfig.DownloaderConfig `json:"sources" toml:"sources"`
-	TTL                       int                                      `json:"cache_ttl" toml:"cache_ttl"`
+	TTL                       int64                                    `json:"cache_ttl" toml:"cache_ttl"`
 	CacheSize                 int                                      `json:"cache_size" toml:"cache_size"`
 	LogPath                   string                                   `json:"log_path" toml:"log_path"`
 }

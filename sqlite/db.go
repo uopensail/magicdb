@@ -2,6 +2,9 @@ package sqlite
 
 import (
 	"fmt"
+	"magicdb/config"
+	"magicdb/updater"
+
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/spaolacci/murmur3"
@@ -11,8 +14,6 @@ import (
 	"github.com/uopensail/ulib/sample"
 	"github.com/uopensail/ulib/zlog"
 	"go.uber.org/zap"
-	"magicdb/config"
-	"magicdb/updater"
 )
 
 type client struct {
@@ -81,7 +82,7 @@ type Client struct {
 	Name string
 }
 
-func NewClient(cfg commonconfig.DownloaderConfig) *Client {
+func NewClient(name string, cfg commonconfig.DownloaderConfig) *Client {
 	createFunc := func(dbConfig *config.MagicDBConfig, params interface{}) updater.ITable {
 		return createClient(dbConfig)
 	}
@@ -90,10 +91,7 @@ func NewClient(cfg commonconfig.DownloaderConfig) *Client {
 		table.(*client).close()
 	}
 
-	name := updater.Register(cfg, createFunc, releaseFunc, nil, nil)
-	if len(name) == 0 {
-		return nil
-	}
+	updater.Register(name, cfg, createFunc, releaseFunc, name, nil)
 	return &Client{Name: name}
 }
 

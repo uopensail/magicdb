@@ -1,13 +1,15 @@
 package manager
 
 import (
-	"github.com/bluele/gcache"
-	"github.com/uopensail/ulib/prome"
-	"github.com/uopensail/ulib/sample"
 	"magicdb/config"
+	"magicdb/monitor"
 	"magicdb/sqlite"
 	"sync"
 	"time"
+
+	"github.com/bluele/gcache"
+	"github.com/uopensail/ulib/prome"
+	"github.com/uopensail/ulib/sample"
 )
 
 type Manager struct {
@@ -25,13 +27,19 @@ type cacheRecord struct {
 
 func Init() {
 	Implementation.clients = make(map[string]*sqlite.Client)
-	Implementation.ttl = config.AppConfigImp.TTL
+	Implementation.ttl = int(config.AppConfigImp.TTL)
+	if Implementation.ttl <= 0 {
+		Implementation.ttl = 300 //5分钟
+	}
 	Implementation.capacity = config.AppConfigImp.CacheSize
-	Implementation.cache = gcache.New(Implementation.capacity).LRU().Build()
+	Implementation.cache = gcache.New(Implementation.capacity).LRU().
+		Expiration(time.Duration(Implementation.ttl) * time.Second).Build()
 
 	for key, cfg := range config.AppConfigImp.Sources {
-		Implementation.clients[key] = sqlite.NewClient(cfg)
+		Implementation.clients[key] = sqlite.NewClient(key, cfg)
 	}
+	//预热缓存的协程
+	go Implementation.CacheWarmUp()
 }
 
 //getFromAllSqlites 从所有的sqlite中获取信息
@@ -89,6 +97,40 @@ func (m *Manager) getFromPartialSqlites(userID string, names []string) *sample.F
 		}
 	}
 	return ret
+}
+
+//CacheWarmUp 缓存预热
+func (m *Manager) CacheWarmUp() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for {
+		<-ticker.C
+		if monitor.GetStatus() != monitor.ServiceNeedWarmUpCacheStatus {
+			continue
+		}
+		ok := monitor.SetStatus(monitor.ServiceNeedWarmUpCacheStatus, monitor.ServiceWarmUppingCacheStatus)
+		if !ok {
+			continue
+		}
+		stat := prome.NewStat("Manager.CacheWarmUp")
+		clientVersions := make(map[string]int64)
+		for name, client := range Implementation.clients {
+			clientVersions[name] = client.GetVersion()
+		}
+		keys := m.cache.Keys(false)
+		for i := 0; i < len(keys); i++ {
+			features := m.getFromAllSqlites(keys[i].(string))
+			record := &cacheRecord{
+				values:   features,
+				versions: clientVersions,
+			}
+			m.cache.SetWithExpire(keys[i].(string), record, time.Duration(m.ttl)*time.Second)
+		}
+		stat.SetCounter(len(keys))
+		stat.End()
+		monitor.Restart()
+	}
+
 }
 
 func (m *Manager) Get(userID string) *sample.Features {

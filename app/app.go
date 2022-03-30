@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
+	"magicdb/manager"
+	"magicdb/monitor"
+
 	"github.com/labstack/echo/v4"
 	"github.com/uopensail/fuku-core/api"
 	"github.com/uopensail/ulib/prome"
 	"google.golang.org/grpc"
-	"magicdb/manager"
+	"google.golang.org/grpc/health/grpc_health_v1"
 )
 
 var __GITHASH__ = ""
@@ -71,4 +74,27 @@ func (app *App) PingEchoHandler(c echo.Context) (err error) {
 
 func (app *App) VersionEchoHandler(c echo.Context) (err error) {
 	return c.JSON(200, __GITHASH__)
+}
+
+func (app *App) Check(ctx context.Context, req *grpc_health_v1.HealthCheckRequest) (*grpc_health_v1.HealthCheckResponse, error) {
+	if monitor.GetStatus() == monitor.ServiceServingStatus {
+		return &grpc_health_v1.HealthCheckResponse{
+			Status: grpc_health_v1.HealthCheckResponse_SERVING,
+		}, nil
+	}
+	return &grpc_health_v1.HealthCheckResponse{
+		Status: grpc_health_v1.HealthCheckResponse_NOT_SERVING,
+	}, nil
+}
+
+func (app *App) Watch(req *grpc_health_v1.HealthCheckRequest, server grpc_health_v1.Health_WatchServer) error {
+	if monitor.GetStatus() == monitor.ServiceServingStatus {
+		server.Send(&grpc_health_v1.HealthCheckResponse{
+			Status: grpc_health_v1.HealthCheckResponse_SERVING,
+		})
+	}
+	server.Send(&grpc_health_v1.HealthCheckResponse{
+		Status: grpc_health_v1.HealthCheckResponse_NOT_SERVING,
+	})
+	return nil
 }

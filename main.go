@@ -3,24 +3,27 @@ package main
 import (
 	"flag"
 	"fmt"
+	"magicdb/app"
+	"magicdb/config"
+	"magicdb/manager"
+	"magicdb/monitor"
+	"net"
+
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/uopensail/ulib/prome"
 	"github.com/uopensail/ulib/zlog"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/health/grpc_health_v1"
-	"magicdb/app"
-	"magicdb/config"
-	"magicdb/manager"
-	"net"
 )
 
 func init() {
 	configPath := flag.String("config", "conf/config.toml", "path of configure")
 	flag.Parse()
+
 	config.AppConfigImp.Init(*configPath)
 	manager.Init()
+	monitor.Init()
 }
 
 func runGRPC() {
@@ -28,7 +31,7 @@ func runGRPC() {
 		app := app.NewApp()
 		grpcServer := grpc.NewServer()
 		//添加监控检测服务
-		grpc_health_v1.RegisterHealthServer(grpcServer, health.NewServer())
+		grpc_health_v1.RegisterHealthServer(grpcServer, app)
 		app.GRPCAPIRegister(grpcServer)
 		listener, err := net.Listen("tcp", fmt.Sprintf(":%d", config.AppConfigImp.GRPCPort))
 		if err != nil {
