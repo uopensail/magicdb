@@ -26,7 +26,8 @@ func Init() {
 		panic(err)
 	}
 	addr := fmt.Sprintf("%s:%d", ip, config.AppConfigImp.GRPCPort)
-	monitorImp = NewMonitor(config.AppConfigImp.Etcdconfig.Address, config.AppConfigImp.Etcdconfig.Filed, addr, int64(config.AppConfigImp.Etcdconfig.TTL))
+	monitorImp = NewMonitor(config.AppConfigImp.Etcdconfig.Address, config.AppConfigImp.Etcdconfig.Filed,
+		addr, int64(config.AppConfigImp.Etcdconfig.TTL))
 }
 
 type Monitor struct {
@@ -71,11 +72,7 @@ func TrySuspend() bool {
 }
 
 func SetStatus(originStatus, newStatus int32) bool {
-	ok := atomic.CompareAndSwapInt32(&monitorImp.status, originStatus, newStatus)
-	if !ok {
-		return false
-	}
-	return true
+	return !atomic.CompareAndSwapInt32(&monitorImp.status, originStatus, newStatus)
 }
 
 func Restart() bool {

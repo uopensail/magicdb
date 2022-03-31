@@ -28,27 +28,19 @@ type Manager struct {
 	Center *CacheCenter
 }
 
-type Job struct {
-	Key            string
-	Finder         finder.IFinder
-	Interval       int
-	DownloadConfig commonconfig.DownloaderConfig
-	Table          ITable
-	Dir            string
-}
-
 func init() {
 	ManagerImp = &Manager{
 		Locker: new(sync.RWMutex),
 		JobMap: make(map[string]*Job),
 		Center: NewCacheCenter(),
 	}
+	go run()
 }
 
 //Register 注册任务
 func Register(name string, cfg commonconfig.DownloaderConfig,
 	factory CreateFunc, release ReleaseFunc,
-	createParams, releaseParams interface{}) bool {
+	createParam, releaseParam interface{}) bool {
 	interval := 30
 	if cfg.Interval > 0 {
 		interval = cfg.Interval
@@ -59,15 +51,19 @@ func Register(name string, cfg commonconfig.DownloaderConfig,
 	var table ITable
 	table = nil
 	if magicConfig != nil {
-		table = factory(magicConfig, createParams)
+		table = factory(magicConfig, createParam)
 	}
 	job := &Job{
-		Key:            name,
-		Interval:       interval,
-		Finder:         myFinder,
-		DownloadConfig: cfg,
-		Table:          table,
-		Dir:            filepath.Join(cfg.LocalPath, fmt.Sprintf("%d", magicConfig.Version)),
+		Key:             name,
+		Interval:        interval,
+		Finder:          myFinder,
+		DownloadConfig:  cfg,
+		Table:           table,
+		Dir:             filepath.Join(cfg.LocalPath, fmt.Sprintf("%d", magicConfig.Version)),
+		CreateFunction:  factory,
+		ReleaseFunction: release,
+		CreateParam:     createParam,
+		ReleaseParam:    releaseParam,
 	}
 
 	ManagerImp.Locker.Lock()
@@ -75,53 +71,50 @@ func Register(name string, cfg commonconfig.DownloaderConfig,
 	ManagerImp.Locker.Unlock()
 
 	//开启更新的协程
-	go update(name, interval, factory, release, createParams, releaseParams)
 	return true
 }
 
-//更新数据
-func update(name string, interval int, factory CreateFunc, release ReleaseFunc,
-	createParams, releaseParams interface{}) {
-	ticker := time.NewTicker(time.Second * time.Duration(interval))
+func run() {
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 	for {
 		<-ticker.C
-		oldJob := getJob(name)
-		if oldJob == nil {
-			continue
-		}
-		localMagicCfg := tryDownloadIfNeed(name, oldJob.Finder, oldJob.DownloadConfig)
-		if localMagicCfg == nil {
-			continue
-		}
-
-		newTable := factory(localMagicCfg, createParams)
-
-		if newTable == nil {
-			zlog.LOG.Error("create table nil")
-			continue
-		}
-		newJob := &Job{
-			Key:            name,
-			DownloadConfig: oldJob.DownloadConfig,
-			Interval:       oldJob.Interval,
-			Finder:         oldJob.Finder,
-			Table:          newTable,
-		}
-		ManagerImp.Locker.Lock()
-		ManagerImp.JobMap[name] = newJob
-		ManagerImp.Locker.Unlock()
-
-		//延迟释放
-		go func(job *Job, params interface{}) {
-			time.Sleep(time.Second)
-			if release != nil && job != nil {
-				release(job.Table, params)
-			}
-			os.RemoveAll(job.Dir)
-			zlog.LOG.Info("updater.release.RemoveAll", zap.String("dir", job.Dir))
-		}(oldJob, releaseParams)
+		check()
 	}
+}
+
+//检查状态，需要更新就更新
+func check() {
+	jobNames := make([]string, 0, 10)
+	ManagerImp.Locker.RLock()
+	for name := range ManagerImp.JobMap {
+		jobNames = append(jobNames, name)
+	}
+	ManagerImp.Locker.RUnlock()
+	needUpdateJobInfos := make([]*Info, 0, 10)
+	for i := 0; i < len(jobNames); i++ {
+		job := getJob(jobNames[i])
+		info := WhetherNeedUpdate(job)
+		if info != nil {
+			needUpdateJobInfos = append(needUpdateJobInfos, info)
+		}
+	}
+
+	if len(needUpdateJobInfos) == 0 {
+		return
+	}
+	ok := monitor.TrySuspend()
+	if !ok {
+		zlog.LOG.Error("tryDownloadIfNeed.TrySuspend Failed")
+		return
+	}
+
+	for i := 0; i < len(needUpdateJobInfos); i++ {
+		job := getJob(needUpdateJobInfos[i].Key)
+		Update(job, needUpdateJobInfos[i])
+	}
+	//更新到需要预热缓存的状态
+	monitor.SetStatus(monitor.ServiceSuspendStatus, monitor.ServiceNeedWarmUpCacheStatus)
 }
 
 func GetTable(key string) ITable {
@@ -222,51 +215,6 @@ func tryDownload(myfinder finder.IFinder, cfg commonconfig.DownloaderConfig) *co
 		return nil
 	}
 	return localMagicMeta
-}
-
-//tryDownloadIfNeed 下载文件
-func tryDownloadIfNeed(key string, finder finder.IFinder, cfg commonconfig.DownloaderConfig) *config.MagicDBConfig {
-	//如果线上的状态不是服务状态，就不更新下载
-	status := monitor.GetStatus()
-	if status != monitor.ServiceServingStatus {
-		zlog.LOG.Info("tryDownloadIfNeed.GetStatus", zap.Int32("serverStatus", status))
-		return nil
-	}
-	info := ManagerImp.Center.Get(key)
-	remoteEtag := finder.GetETag(cfg.SourcePath)
-	if len(remoteEtag) == 0 {
-		zlog.LOG.Error("tryDownloadIfNeed.GetETag", zap.String("remotePath", cfg.SourcePath))
-		return nil
-	}
-	remoteUpdateTime := finder.GetUpdateTime(cfg.SourcePath)
-	if remoteUpdateTime == 0 {
-		zlog.LOG.Error("tryDownloadIfNeed.GetUpdateTime", zap.String("remotePath", cfg.SourcePath))
-		return nil
-	}
-	//以远程的数据为准
-	if info == nil || remoteEtag != info.Etag || remoteUpdateTime > info.UpdateTime {
-		ok := monitor.TrySuspend()
-		if !ok {
-			zlog.LOG.Error("tryDownloadIfNeed.TrySuspend Failed")
-			return nil
-		}
-		newInfo := Info{
-			Key:        key,
-			Etag:       remoteEtag,
-			UpdateTime: remoteUpdateTime,
-		}
-
-		ret := tryDownload(finder, cfg)
-
-		if ret != nil {
-			//更新新的info
-			ManagerImp.Center.Upset(key, &newInfo)
-		}
-		//更新到需要预热缓存的状态
-		monitor.SetStatus(monitor.ServiceSuspendStatus, monitor.ServiceNeedWarmUpCacheStatus)
-		return ret
-	}
-	return nil
 }
 
 var ManagerImp *Manager
