@@ -5,7 +5,6 @@ import (
 	"io/ioutil"
 
 	"github.com/BurntSushi/toml"
-	fconfig "github.com/uopensail/fuku-core/config"
 	"github.com/uopensail/ulib/commonconfig"
 	"github.com/uopensail/ulib/zlog"
 	"go.uber.org/zap"
@@ -15,7 +14,7 @@ type MagicDBConfig struct {
 	Name       string                     `json:"name" toml:"name"`
 	Partitions []string                   `json:"partitions" toml:"partitions"`
 	Version    int64                      `json:"versions" toml:"versions"`
-	Features   map[string]fconfig.Feature `json:"features" toml:"features"`
+	Features   map[string]model.Feature `json:"features" toml:"features"`
 }
 
 type EtdcConfig struct {
@@ -54,11 +53,13 @@ func (mc *MagicDBConfig) Dump(filepath string) bool {
 
 type AppConfig struct {
 	commonconfig.ServerConfig `json:",inline" toml:",inline"`
+	WorkDir string `json:"work_dir" toml:"work_dir"`
+	LogDir                   string                                   `json:"log_dir" toml:"log_dir"`
 	Etcdconfig                EtdcConfig                               `json:"etcd" toml:"etcd"`
-	Sources                   map[string]commonconfig.DownloaderConfig `json:"sources" toml:"sources"`
+	UseCache bool  `json:"use_cache" toml:"use_cache"`
 	TTL                       int64                                    `json:"cache_ttl" toml:"cache_ttl"`
 	CacheSize                 int                                      `json:"cache_size" toml:"cache_size"`
-	LogPath                   string                                   `json:"log_path" toml:"log_path"`
+	
 }
 
 func (config *AppConfig) Init(configPath string) {
