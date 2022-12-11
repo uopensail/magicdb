@@ -1,20 +1,8 @@
-project_name = "magicdb_server"
+cache_size = 100000
+cache_ttl = 10000
+debug = true
 grpc_port = 9527
 http_port = 9528
-prome_port = 9529
-debug = true
-cache_ttl = 10000
-cache_size = 100000
 log_path = '/tmp/'
-
-#[sources]
-#[sources.test123]
-#type = "local"
-#timeout = 30
-#endpoint = ""
-#region = "1111"
-#access_key = "22222"
-#secret_key = "33333333"
-#source_path = "4444"
-#local_path = "444444"
-#interval = 20
+project_name = "magicdb_engine"
+prome_port = 9529

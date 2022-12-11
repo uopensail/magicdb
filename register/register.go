@@ -4,10 +4,13 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"magicdb/status"
+	"magicdb/engine"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
+	"github.com/uopensail/ulib/prome"
+	"github.com/uopensail/ulib/utils"
+	"github.com/uopensail/ulib/zlog"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/etcdserver/api/v3rpc/rpctypes"
 )
 
@@ -15,6 +18,12 @@ const (
 	ttl       int64  = 5
 	namespace string = "/magicdb/engine"
 )
+
+var RegisterInstance *Register
+
+func Init(client *clientv3.Client) {
+	RegisterInstance = NewRegister(client)
+}
 
 type Register struct {
 	client    *clientv3.Client
@@ -25,31 +34,36 @@ type Register struct {
 	leaseTime int64
 }
 
-func GetExternalIP() string {
-	return ""
-}
 func NewRegister(client *clientv3.Client) *Register {
-	return &Register{
+	ip, err := utils.GetLocalIp()
+	if err != nil {
+		zlog.LOG.Error(fmt.Sprintf("get local ip error: %s", err.Error()))
+		panic(err)
+	}
+
+	r := &Register{
 		client:    client,
 		leaseId:   0,
-		ip:        GetExternalIP(),
+		ip:        ip,
 		interval:  ttl,
 		leaseTime: 3 * ttl,
 		stop:      make(chan bool, 1),
 	}
+	go r.run()
+	return r
 }
 
 func (r *Register) Stop() {
 	r.stop <- true
 }
 
-func (r *Register) Run() {
+func (r *Register) run() {
 	r.register()
 	timer := time.NewTicker(time.Duration(r.interval) * time.Second)
 	for {
 		select {
 		case <-timer.C:
-			if status.EngineStatusImp.IsServing() {
+			if engine.EngineInstance.IsServing() {
 				r.keepAlive()
 			} else {
 				r.revoke()
