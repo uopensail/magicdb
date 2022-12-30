@@ -12,9 +12,9 @@ import shutil
 import sqlite3
 import time
 from concurrent.futures import ProcessPoolExecutor
+from enum import IntEnum
 from multiprocessing import cpu_count
 from typing import List
-from enum import IntEnum
 
 import awswrangler as wr
 import boto3

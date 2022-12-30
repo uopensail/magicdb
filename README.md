@@ -66,6 +66,5 @@ magicdb-engine/magicdb-cli用到了如下的一些技术:
     "versions": ["v1", "v2", "v3"],
     "partitions": 100,
     "key":"pk",
-    "properties":{}
 }
 ```

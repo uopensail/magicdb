@@ -4,15 +4,16 @@
 desc: process commands for magicdb
 author: rand
 """
-import antlr4
 import time
-import requests
-from magicdbLexer import magicdbLexer
-from magicdbParser import magicdbParser
-from magicdbListener import magicdbListener
-from magicdbEtcdClient import MagicDBEtcdClient
-from magicdbLoad import to_magicdb
 from multiprocessing import cpu_count
+
+import antlr4
+import requests
+from magicdbEtcdClient import MagicDBEtcdClient
+from magicdbLexer import magicdbLexer
+from magicdbListener import magicdbListener
+from magicdbLoad import to_magicdb
+from magicdbParser import magicdbParser
 
 
 class MagicDBListenerHandler(magicdbListener):
