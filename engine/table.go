@@ -12,7 +12,11 @@ type Table struct {
 	version int64
 }
 
-func NewTable(database *model.DataBase, table *model.Table, version int64) *Table {
+func NewTable(database *model.DataBase, table *model.Table, version int64) *Table,error {
+	if database == nil || table == nil {
+		return nil
+	}
+	
 	sqliteTable := sqlite.NewTable(database, table)
 	if sqliteTable == nil {
 		return nil

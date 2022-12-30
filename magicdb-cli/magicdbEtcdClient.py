@@ -1,271 +1,243 @@
 #!/usr/bin/python3
 # -*- coding: UTF-8 -*-
 """
-desc: 
-author: rand
+desc: ACID of etcd keys of magicdb
+author: timepi
 """
 import json
 import etcd3
+from typing import Tuple, List
 
 
 class MagicDBEtcdClient:
-    def __init__(self, name: str, host: str, port: int, passwd: str = None) -> None:
+    def __init__(self, host: str, port: int, passwd: str = None) -> None:
         self.client = etcd3.Etcd3Client(host=host, port=port, password=passwd)
-        self.name = name
-        self.engine_prefix = f'{self.name}'
-        self.db_prefix = f'{self.name}/databases'
-        self.table_prefix = f'{self.name}/databases/tables'
-        self.machine_prefix = f'{self.name}/databases/machines'
-        self.version_prefix = f'{self.name}/databases/versions'
-        self.current_version_prefix = f'{self.name}/databases/current_versions'
+        self.name = "magicdb/storage"
+        self.locker = "magicdb/storage/locker"
 
-    def db_key(self, database: str):
-        return f'/{self.db_prefix}/{database}'
+    def db_key(self, database: str) -> str:
+        return "/%s/databases/%s" % (self.name, database)
 
-    def machine_key(self, machine: str):
-        return f'/{self.machine_prefix}/{machine}'
+    def machine_key(self, machine: str) -> str:
+        return "/%s/machines/%s" % (self.name, machine)
 
-    def table_key(self, database: str, table: str):
-        return f'/{self.table_prefix}/{database}/{table}'
+    def table_key(self, database: str, table: str) -> str:
+        return "/%s/databases/%s/%s" % (self.name, database, table)
 
-    def current_version_key(self, database: str, table: str):
-        return f'/{self.current_version_prefix}/{database}/{table}'
-
-    def version_key(self, database: str, table: str, version: str):
-        return f'/{self.version_prefix}/{database}/{table}/{version}'
-
-    def get_engine_info(self):
-        value, _ = self.client.get(self.engine_prefix)
-        if value is None:
-            return {}
-        else:
-            return json.loads(value)
-
-    def check_database(self, database: str):
+    def check_database(self, database: str) -> bool:
         resp = self.client.get_response(key=self.db_key(database))
         return resp.count >= 1
 
-    def create_database(self, database: str, properties: dict) -> bool:
-        assert ('access_key' in properties
-                and 'secret_key' in properties
-                and 'bucket' in properties
-                and 'endpoint' in properties
-                and 'plaform' in properties)
+    def create_database(self, database: str, properties: dict) -> Tuple[int, str]:
         values = json.dumps(
-            {'properties': properties, 'machines': [], 'tables': []})
-        status = True
-        with self.client.lock(self.name, ttl=10):
+            {
+                "name": database,
+                "cloud": properties["cloud"],
+                "bucket": properties["bucket"],
+                "endpoint": properties["endpoint"],
+                "region": properties["region"],
+                "access_key": properties["access_key"],
+                "secret_key": properties["secret_key"],
+                "machines": [],
+                "tables": [],
+            }
+        )
+        status, msg = True, "success"
+        with self.client.lock(self.locker, ttl=10):
             if self.check_database(database):
-                print(f'database: {database} exists')
-                status = False
+                status, msg = False, "database:`%s` exists" % database
             else:
                 self.client.put(key=self.db_key(database), value=values)
-                info = self.get_engine_info()
-                if 'databases' not in info:
-                    info['databases'] = []
-                if database not in info.get('databases', []):
-                    info['databases'].append(database)
-                self.client.put(self.engine_prefix, json.dumps(info))
-        return status
+        return status, msg
 
-    def drop_database(self, database: str) -> bool:
+    def drop_database(self, database: str) -> Tuple[int, str]:
         db_key = self.db_key(database)
-        table_key = f'/{self.table_prefix}/{database}'
-        version_key = f'/{self.version_prefix}/{database}'
-        current_version_key = f'/{self.current_version_prefix}/{database}'
-        status = True
-        with self.client.lock(self.name, ttl=10):
+        status, msg = True, "success"
+        with self.client.lock(self.locker, ttl=10):
             if not self.check_database(database):
-                print(f'database:`{database}` not exists')
-                status = False
+                status, msg = False, "database:`%s` not exists" % database
             else:
-                info = self.get_db_info(database)
-                for machine in info.get('machines', []):
-                    self.client.delete_prefix(
-                        prefix=f'/{self.machine_prefix}/{machine}')
-                self.client.delete_prefix(prefix=current_version_key)
-                self.client.delete_prefix(prefix=version_key)
-                self.client.delete_prefix(prefix=table_key)
                 self.client.delete_prefix(prefix=db_key)
-        return status
+        return status, msg
 
     def get_db_info(self, database: str):
         if not self.check_database(database):
-            print(f'database:`{database}` not exists')
             return {}
         value, _ = self.client.get(self.db_key(database))
-        if value is not None:
-            return json.loads(value)
-        return {}
+        return json.loads(value) if value is not None else {}
 
-    def show_databases(self):
-        info = self.get_engine_info()
-        return info.get('databases', [])
+    def show_databases(self) -> List[str]:
+        db_prefix = "/%s/databases/" % self.name
+        values = self.client.get_prefix(db_prefix)
+        dbs = []
+        for value in values:
+            tmp = value[1].key[len(db_prefix) + 1 :]
+            if tmp.find("/") < 0:
+                dbs.append(tmp)
+        return dbs
 
-    def check_machine(self,  database: str, machine: str):
+    def check_machine(self, database: str, machine: str) -> bool:
         if not self.check_database(database):
-            print(f'database:`{database}` not exists')
             return False
-        resp = self.client.get_response(
-            key=self.machine_key(machine))
+        resp = self.client.get_response(key=self.machine_key(machine))
         return resp.count >= 1
 
-    def show_machines(self, database: str):
+    def show_machines(self, database: str) -> List[str]:
         info = self.get_db_info(database)
-        return info.get('machines', [])
+        return info.get("machines", [])
 
-    def add_machine(self, database: str, machine: str):
-        key = f'/{self.machine_prefix}/{machine}'
-        status = True
-        with self.client.lock(self.name, ttl=10):
+    def add_machine(self, database: str, machine: str) -> Tuple[int, str]:
+        machine_key = self.machine_key(machine)
+        db_key = self.db_key(database)
+        status, msg = True, "success"
+        with self.client.lock(self.locker, ttl=10):
             if not self.check_database(database):
-                print(f'database:`{database}` not exists')
-                status = False
+                status, msg = False, f"database:`%s` not exists" % database
             else:
-                self.client.put(key=key, value=json.dumps({'db': database}))
-                info = self.get_db_info(database)
-                if machine not in info['machines']:
-                    info['machines'].append(machine)
-                self.client.put(self.db_key(database), json.dumps(info))
-        return status
+                db_info = self.get_db_info(database)
+                if machine not in db_info["machines"]:
+                    db_info["machines"].append(machine)
+                self.client.put(db_key, json.dumps(db_info))
+                self.client.put(
+                    key=machine_key, value=json.dumps({"database": database})
+                )
+        return status, msg
 
-    def delete_machine(self, database: str, machine: str):
-        key = f'/{self.machine_prefix}/{machine}'
-        status = True
-        with self.client.lock(self.name, ttl=10):
+    def delete_machine(self, database: str, machine: str) -> Tuple[int, str]:
+        machine_key = self.machine_key(machine)
+        db_key = self.db_key(database)
+        status, msg = True, "success"
+        with self.client.lock(self.locker, ttl=10):
             if not self.check_machine(database, machine):
-                print(f'database:`{database}` machine: `{machine}` not exists')
-                status = False
+                status, msg = False, f"database:`%s` machine: `%s` not exists" % (
+                    database,
+                    machine,
+                )
             else:
-                self.client.delete(key)
-                info = self.get_db_info(database)
-                if machine in info['machines']:
-                    info['machines'].remove(machine)
-                self.client.put(self.db_key(database), json.dumps(info))
-        return status
+                self.client.delete(machine_key)
+                db_info = self.get_db_info(database)
+                if machine in db_info["machines"]:
+                    db_info["machines"].remove(machine)
+                self.client.put(db_key, json.dumps(db_info))
+        return status, msg
 
-    def check_table(self,  database: str, table: str):
+    def check_table(self, database: str, table: str) -> bool:
         if not self.check_database(database):
-            print(f'database:`{database}` not exists')
+            print(f"database:`{database}` not exists")
             return False
         resp = self.client.get_response(key=self.table_key(database, table))
         return resp.count >= 1
 
-    def drop_table(self, database: str, table: str):
+    def drop_table(self, database: str, table: str) -> Tuple[int, str]:
+        db_key = self.db_key(database)
         table_key = self.table_key(database, table)
-        version_key = f'/{self.version_prefix}/{database}/{table}'
-        current_version_key = f'/{self.current_version_prefix}/{database}/{table}'
-        status = True
-        with self.client.lock(self.name, ttl=10):
+        status, msg = True, "success"
+        with self.client.lock(self.locker, ttl=10):
             if not self.check_table(database, table):
-                print(f'table:`{database}.{table}` not exists')
-                status = False
+                status, msg = False, "table:`%s.%s` not exists" % (database, table)
             else:
-                self.client.delete_prefix(prefix=current_version_key)
-                self.client.delete_prefix(prefix=version_key)
+                db_info = self.get_db_info(database)
+                if table in db_info["tables"]:
+                    db_info["tables"].remove(table)
+                self.client.put(db_key, json.dumps(db_info))
                 self.client.delete_prefix(prefix=table_key)
-                info = self.get_db_info(database)
-                if table in info['tables']:
-                    info['tables'].remove(table)
-                self.client.put(self.db_key(database), json.dumps(info))
-        return status
+        return status, msg
 
-    def get_table_info(self, database: str, table: str):
+    def get_table_info(self, database: str, table: str) -> dict:
         if not self.check_table(database, table):
-            print(f'table:`{database}.{table}` not exists')
             return {}
         value, _ = self.client.get(self.table_key(database, table))
-        if value is not None:
-            return json.loads(value)
-        return {}
+        return json.loads(value) if value is not None else {}
 
-    def show_tables(self, database: str):
+    def show_tables(self, database: str) -> List[str]:
         info = self.get_db_info(database)
-        return info.get('tables', [])
+        return info.get("tables", [])
 
-    def create_table(self, database: str, table: str, properties: dict):
-        assert ('data_path' in properties and 'meta_path' in properties)
-        status = True
-        with self.client.lock(self.name, ttl=10):
+    def create_table(
+        self, database: str, table: str, properties: dict
+    ) -> Tuple[int, str]:
+        status, msg = True, "success"
+        db_key = self.db_key(database)
+        table_key = self.table_key(database, table)
+        values = json.dumps(
+            {
+                "name": table,
+                "database": database,
+                "data": properties["data_dir"],
+                "meta": properties["meta_dir"],
+                "current": "nil",
+                "versions": [],
+                "partitions": properties.get("partitions", 100),
+                "key": properties["key"],
+            }
+        )
+        with self.client.lock(self.locker, ttl=10):
             if self.check_table(database, table):
-                print(f'table:`{database}.{table}` exists')
-                status = False
+                status, msg = False, "table:`%s.%s` exists" % (database, table)
             elif not self.check_database(database):
-                print(f'database:`{database}` not exists')
-                status = False
+                status, msg = False, "database:`%s` not exists" % database
             else:
-                self.client.put(key=self.table_key(database, table),
-                                value=json.dumps({'properties': properties, 'db': database, 'versions': [],
-                                                  'current_version': 'nil'}))
-                info = self.get_db_info(database)
-                if table not in info['tables']:
-                    info['tables'].append(table)
-                self.client.put(self.db_key(database), json.dumps(info))
-        return status
+                db_info = self.get_db_info(database)
+                if table not in db_info["tables"]:
+                    db_info["tables"].append(table)
+                    self.client.put(db_key, json.dumps(db_info))
+                self.client.put(
+                    key=table_key,
+                    value=values,
+                )
+        return status, msg
 
-    def show_versions(self, database: str, table: str):
+    def show_versions(self, database: str, table: str) -> List[str]:
         info = self.get_table_info(database, table)
-        return info.get('versions', [])
+        return info.get("versions", [])
 
-    def show_current_version(self, database: str, table: str):
+    def show_current_version(self, database: str, table: str) -> str:
         info = self.get_table_info(database, table)
-        return info.get('current_version', 'nil')
+        return info.get("current_version", "nil")
 
-    def add_version(self,  database: str, table: str, version: str):
-        status = True
-        with self.client.lock(self.name, ttl=10):
+    def add_version(self, database: str, table: str, version: str) -> Tuple[int, str]:
+        status, msg = True, "success"
+        table_key = self.table_key(database, table)
+        with self.client.lock(self.locker, ttl=10):
             if not self.check_table(database, table):
-                print(f'table:`{database}.{table}` not exists')
-                status = False
+                status, msg = False, "table:`%s.%s` not exists" % (database, table)
             else:
-                self.client.put(key=self.version_key(
-                    database, table, version), value=version)
                 table_info = self.get_table_info(database, table)
-                if version not in table_info['versions']:
-                    table_info['versions'].append(version)
-                self.client.put(self.table_key(database, table),
-                                json.dumps(table_info))
-        return status
+                if version not in table_info["versions"]:
+                    table_info["versions"].append(version)
+                    self.client.put(table_key, json.dumps(table_info))
+                else:
+                    status, msg = False, "version:%s exists" % (version)
+        return status, msg
 
-    def check_version(self,  database: str, table: str, version: str):
-        if not self.check_table(database, table):
-            print(f'table:`{database}.{table}` not exists')
-            return False
-        resp = self.client.get_response(
-            key=self.version_key(database, table, version))
-        return resp.count >= 1
-
-    def update_current_version(self, database: str, table: str, version: str):
-        status = True
+    def update_current_version(
+        self, database: str, table: str, version: str
+    ) -> Tuple[int, str]:
+        status, msg = True, "success"
+        table_key = self.table_key(database, table)
         with self.client.lock(self.name, ttl=10):
             if not self.check_version(database, table, version):
-                print(
-                    f'table:`{database}.{table}` version:`{version}` not exists')
+                print(f"table:`{database}.{table}` version:`{version}` not exists")
                 status = False
             else:
                 table_info = self.get_table_info(database, table)
-                self.client.put(self.current_version_key(
-                    database, table), version)
-                table_info['current_version'] = version
-                self.client.put(self.table_key(
-                    database, table), json.dumps(table_info))
-        return status
+                if version not in table_info["versions"]:
+                    status, msg = False, "version:%s not exists" % version
+                else:
+                    table_info["current_version"] = version
+                    self.client.put(table_key, json.dumps(table_info))
+        return status, msg
 
-    def drop_version(self, database: str, table: str, version: str):
-        status = True
-        with self.client.lock(self.name, ttl=10):
-            if not self.check_version(database, table, version):
-                print(
-                    f'table:`{database}.{table}` version:`{version}` not exists')
-                status = False
+    def drop_version(self, database: str, table: str, version: str) -> Tuple[int, str]:
+        status, msg = True, "success"
+        table_key = self.table_key(database, table)
+        with self.client.lock(self.locker, ttl=10):
+            table_info = self.get_table_info(database, table)
+            if version in table_info["versions"]:
+                table_info["versions"].remove(version)
             else:
-                self.client.delete(key=self.version_key(
-                    database, table, version))
-                table_info = self.get_table_info(database, table)
-                if version in table_info['versions']:
-                    table_info['versions'].remove(version)
-                if version == table_info['current_version']:
-                    table_info['current_version'] = 'nil'
-                self.client.put(self.table_key(
-                    database, table), json.dumps(table_info))
-        return status
+                status, msg = False, "version:%s not exists" % version
+            if version == table_info["current_version"]:
+                table_info["current_version"] = "nil"
+            self.client.put(table_key, json.dumps(table_info))
+        return status, msg

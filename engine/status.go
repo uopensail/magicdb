@@ -38,7 +38,9 @@ func (s *EngineStatus) AddTable(table string) {
 func (s *EngineStatus) DelTable(table string) {
 	s.Locker.Lock()
 	defer s.Locker.Unlock()
-	delete(s.Tables, table)
+	if s.Tables != nil {
+		delete(s.Tables, table)
+	}
 }
 
 func (s *EngineStatus) IsServing() bool {

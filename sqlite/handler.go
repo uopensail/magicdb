@@ -32,7 +32,7 @@ type Handler struct {
 func NewHandler(database *model.DataBase, table *model.Table) *Handler {
 	fconfig := commonconfig.FinderConfig{
 		Type:      database.Cloud,
-		Timeout:   60,
+		Timeout:   300,
 		Endpoint:  database.Endpoint,
 		Region:    database.Region,
 		AccessKey: database.AccessKey,
@@ -129,11 +129,8 @@ func (handler *Handler) getRemote() *Client {
 	}
 
 	handler.markSuccess()
-
-	//把meta文件写到本地磁盘
 	meta.Partitions = partitions
 	meta.Dump(handler.metaPath)
-
 	return NewClient(meta)
 }
 

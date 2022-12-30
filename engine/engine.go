@@ -19,7 +19,7 @@ type Engine struct {
 	client   *clientv3.Client
 	database unsafe.Pointer
 	version  int64
-	stop     bool
+	stop     chan bool
 }
 
 var EngineInstance *Engine
@@ -33,7 +33,7 @@ func NewEngine(client *clientv3.Client) *Engine {
 		client:   client,
 		database: nil,
 		version:  0,
-		stop:     false,
+		stop:     make(chan bool, 1),
 	}
 	go engine.run()
 	return engine
@@ -89,14 +89,19 @@ func (engine *Engine) Get(key string, tables []string) *sample.Features {
 func (engine *Engine) run() {
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
-	for !engine.stop {
-		<-timer.C
-		engine.update()
+
+	for {
+		select {
+		case <-timer.C:
+			engine.update()
+		case <-engine.stop:
+			return
+		}
 	}
 }
 
 func (engine *Engine) Stop() {
-	engine.stop = true
+	engine.stop <- true
 }
 
 func (engine *Engine) update() {
@@ -108,6 +113,7 @@ func (engine *Engine) update() {
 			return
 		}
 		atomic.StorePointer(&engine.database, nil)
+		return
 	}
 	if engine.version == version {
 		return

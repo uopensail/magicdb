@@ -21,43 +21,42 @@ const (
 
 const (
 	TextType StoreType = iota + 1
-	RealType
 	IntegerType
+	RealType
 )
 
 type Feature struct {
-	Column    string    `bson:"column" json:"column" toml:"column"`
-	DataType  DataType  `bson:"dtype" json:"dtype" toml:"dtype"`
-	StoreType StoreType `bson:"stype" json:"stype" toml:"stype"`
+	Column    string    `json:"column" toml:"column"`
+	DataType  DataType  `json:"dtype" toml:"dtype"`
+	StoreType StoreType `json:"stype" toml:"stype"`
 }
 
 type Machine struct {
-	DataBase string `bson:"database" json:"database" toml:"database"`
+	DataBase string `json:"database" toml:"database"`
 }
 
 type DataBase struct {
-	Machines  []string `bson:"machines" json:"machines" toml:"machines"`
-	Name      string   `bson:"name" json:"name" toml:"name"`
-	Cloud     string   `bson:"cloud" json:"cloud" toml:"cloud"`
-	Bucket    string   `bson:"bucket" json:"bucket" toml:"bucket"`
-	Tables    []string `bson:"tables" json:"tables" toml:"tables"`
-	Endpoint  string   `bson:"endpoint" json:"endpoint" toml:"endpoint"`
-	Region    string   `bson:"region" json:"region" toml:"region"`
-	AccessKey string   `bson:"access_key" json:"access_key" toml:"access_key"`
-	SecretKey string   `bson:"secret_key" json:"secret_key" toml:"secret_key"`
+	Machines  []string `json:"machines" toml:"machines"`
+	Name      string   `json:"name" toml:"name"`
+	Cloud     string   `json:"cloud" toml:"cloud"`
+	Bucket    string   `json:"bucket" toml:"bucket"`
+	Tables    []string `json:"tables" toml:"tables"`
+	Endpoint  string   `json:"endpoint" toml:"endpoint"`
+	Region    string   `json:"region" toml:"region"`
+	AccessKey string   `json:"access_key" toml:"access_key"`
+	SecretKey string   `json:"secret_key" toml:"secret_key"`
 }
 
 type Table struct {
-	Name       string                 `bson:"name" json:"name" toml:"name"`
-	DataBase   string                 `bson:"database" json:"database" toml:"database"`
-	Features   []Feature              `bson:"features" json:"features" toml:"features"`
-	DataDir    string                 `bson:"data" json:"data" toml:"data"`
-	MetaDir    string                 `bson:"meta" json:"meta" toml:"meta"`
-	Versions   []string               `bson:"versions" json:"versions" toml:"versions"`
-	Current    string                 `bson:"current" json:"current" toml:"current"`
-	Partitions int                    `bson:"partitions" json:"partitions" toml:"partitions"`
-	Key        string                 `bson:"key" json:"key" toml:"key"`
-	Properties map[string]interface{} `bson:"properties" json:"properties" toml:"properties"`
+	Name       string                 `json:"name" toml:"name"`
+	DataBase   string                 `json:"database" toml:"database"`
+	DataDir    string                 `json:"data" toml:"data"`
+	MetaDir    string                 `json:"meta" toml:"meta"`
+	Versions   []string               `json:"versions" toml:"versions"`
+	Current    string                 `json:"current" toml:"current"`
+	Partitions int                    `json:"partitions" toml:"partitions"`
+	Key        string                 `json:"key" toml:"key"`
+	Properties map[string]interface{} `json:"properties" toml:"properties"`
 }
 
 type Meta struct {
@@ -65,7 +64,7 @@ type Meta struct {
 	Partitions []string           `json:"partitions" toml:"partitions"`
 	Version    int64              `json:"versions" toml:"versions"`
 	Features   map[string]Feature `json:"features" toml:"features"`
-	Key        string             `bson:"key" json:"key" toml:"key"`
+	Key        string             `json:"key" toml:"key"`
 }
 
 func NewMeta(filepath string) *Meta {

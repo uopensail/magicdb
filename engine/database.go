@@ -13,6 +13,8 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+const TableCurrentVersionIsNil = "nil"
+
 type DataBase struct {
 	name         string
 	client       *clientv3.Client
@@ -21,7 +23,7 @@ type DataBase struct {
 	localLocker  *sync.RWMutex
 	tables       map[string]*Table
 	version      int64
-	stop         bool
+	stop         chan bool
 }
 
 func NewDataBase(name string, client *clientv3.Client) *DataBase {
@@ -33,7 +35,7 @@ func NewDataBase(name string, client *clientv3.Client) *DataBase {
 		version:      0,
 		remoteLocker: NewLocker(client, name),
 		localLocker:  new(sync.RWMutex),
-		stop:         false,
+		stop:         make(chan bool, 1),
 	}
 
 	go db.run()
@@ -97,7 +99,7 @@ func (db *DataBase) delTable(table string) {
 }
 
 func (db *DataBase) close() {
-	db.stop = true
+	db.stop <- true
 }
 
 func (db *DataBase) isServing() bool {
@@ -107,13 +109,18 @@ func (db *DataBase) isServing() bool {
 func (db *DataBase) run() {
 	timer := time.NewTimer(time.Second)
 	defer timer.Stop()
-	for !db.stop {
-		<-timer.C
-		dbInfo, version := db.getDataBaseInfo()
-		db.updateDataBase(dbInfo, version)
 
-		for i := 0; i < len(dbInfo.Tables); i++ {
-			go db.updateTable(dbInfo.Tables[i])
+	for {
+		select {
+		case <-timer.C:
+			dbInfo, version := db.getDataBaseInfo()
+			db.updateDataBase(dbInfo, version)
+
+			for i := 0; i < len(dbInfo.Tables); i++ {
+				go db.updateTable(dbInfo, dbInfo.Tables[i])
+			}
+		case <-db.stop:
+			return
 		}
 	}
 }
@@ -158,7 +165,7 @@ func (db *DataBase) GetAll(key string) *sample.Features {
 	return &ret
 }
 
-func (db *DataBase) updateTable(name string) {
+func (db *DataBase) updateTable(dbInfo *model.DataBase, name string) {
 	stat := prome.NewStat("DataBase.updateTable")
 	defer stat.End()
 	tableInfo, tableVersion := db.getTableInfo(name)
@@ -167,6 +174,13 @@ func (db *DataBase) updateTable(name string) {
 		db.delTable(name)
 		zlog.LOG.Info(fmt.Sprintf("delete table: %s", name))
 		stat.MarkErr()
+		return
+	}
+
+	if tableInfo.Current == TableCurrentVersionIsNil {
+		db.localLocker.Lock()
+		db.tables[name] = nil
+		db.localLocker.Unlock()
 		return
 	}
 
@@ -182,7 +196,7 @@ func (db *DataBase) updateTable(name string) {
 		zlog.LOG.Info(fmt.Sprintf("table:%s version: %d not changed", name, tableVersion))
 		return
 	}
-	dbInfo, _ := db.getDataBaseInfo()
+
 	err := db.remoteLocker.Lock()
 	if err != nil {
 		stat.MarkErr()

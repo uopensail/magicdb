@@ -20,11 +20,13 @@ func NewTable(database *model.DataBase, table *model.Table) *Table {
 	if handler == nil {
 		zlog.LOG.Error("handler is nil")
 		stat.MarkErr()
+		return nil
 	}
 	client := handler.Get()
 	if client == nil {
 		zlog.LOG.Error("client is nil")
 		stat.MarkErr()
+		return nil
 	}
 
 	return &Table{handler: handler, client: client}
