@@ -5,14 +5,16 @@ import (
 	"fmt"
 	"magicdb/app"
 	"magicdb/config"
-	"magicdb/manager"
-	"magicdb/monitor"
+	"magicdb/engine"
+	"magicdb/register"
 	"net"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/uopensail/ulib/prome"
 	"github.com/uopensail/ulib/zlog"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 )
@@ -22,8 +24,16 @@ func init() {
 	flag.Parse()
 
 	config.AppConfigImp.Init(*configPath)
-	manager.Init()
-	monitor.Init()
+
+	client, err := clientv3.New(clientv3.Config{
+		Endpoints:   config.AppConfigImp.Etcdconfig.Address,
+		DialTimeout: time.Duration(config.AppConfigImp.Etcdconfig.TTL) * time.Second,
+	})
+	if err != nil {
+		panic(err)
+	}
+	register.Init(client)
+	engine.Init(client)
 }
 
 func runGRPC() {
@@ -66,7 +76,7 @@ func runHttp() {
 func main() {
 	zlog.InitLogger(config.AppConfigImp.ProjectName,
 		config.AppConfigImp.Debug,
-		config.AppConfigImp.LogPath)
+		config.AppConfigImp.LogDir)
 
 	runGRPC()
 	runProme()

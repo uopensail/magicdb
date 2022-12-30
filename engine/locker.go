@@ -1,4 +1,4 @@
-package monitor
+package engine
 
 import (
 	"context"
@@ -17,23 +17,14 @@ type Locker struct {
 	name    string
 }
 
-func NewLocker(etcdAddrs []string, name string) *Locker {
-	client, err := clientv3.New(
-		clientv3.Config{
-			Endpoints:   etcdAddrs,
-			DialTimeout: time.Second * 5,
-		})
-	if err != nil {
-		return nil
-	}
-
+func NewLocker(client *clientv3.Client, name string) *Locker {
 	locker := &Locker{
 		client: client,
 		name:   name,
 	}
 	session, err := concurrency.NewSession(client)
 	if err != nil {
-		zlog.LOG.Error("etcd  concurrency.NewSession", zap.Error(err))
+		zlog.LOG.Error("etcd concurrency.NewSession", zap.Error(err))
 		return nil
 	}
 	locker.session = session

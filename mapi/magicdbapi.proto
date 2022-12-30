@@ -1,0 +1,20 @@
+syntax = "proto3";
+package api;
+
+import "github.com/uopensail/ulib/sample/features.proto";
+option  go_package=".;mapi";
+message Request{
+  string key = 1;
+  repeated string tables = 2;
+}
+
+message Response{
+  int32 code = 1;
+  string msg = 2;
+  sample.Features features = 3;
+}
+
+service magicdb{
+  rpc Get(Request) returns (Response) {}
+}
+
