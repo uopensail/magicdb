@@ -153,12 +153,19 @@ class MagicDBListenerHandler(magicdbListener):
         items = table_str.split(".")
         database, table = items[0], items[1]
         key = ctx.STRING().getText()
-        print(database, table, key)
+        field = ctx.VARNAME().getText()
 
         machines = self.etcd_client.show_machines(database=database)
-
-        requests.get()
-        # TODO
+        if len(machines) == 0:
+            print("err! table:`%s.%s` not serving" % (database, table))
+            return
+        table_info = self.etcd_client.get_table_info(database=database, table=table)
+        if table_info["key"] != field:
+            print("err! not support select record using filed: %s" % field)
+            return
+        url = "http://%s:%d/api/get" % (machines[0], 9528)
+        value = requests.post(url, json={"key": key})
+        print(value["features"])
 
     def exitProperties(self, ctx: magicdbParser.PropertiesContext):
         properties = {}

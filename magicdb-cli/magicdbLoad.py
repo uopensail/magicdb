@@ -14,6 +14,7 @@ import time
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import cpu_count
 from typing import List
+from enum import IntEnum
 
 import awswrangler as wr
 import boto3
@@ -86,6 +87,44 @@ def pyarrow_type_to_sqlite_type(field: pyarrow.lib.Field) -> str:
     raise TypeError(f"{field.type} not support")
 
 
+class DataType(IntEnum):
+    StringListType = 1
+    Int64ListType = 2
+    Float32ListType = 3
+
+
+class StoreType(IntEnum):
+    TextType = 1
+    IntegerType = 2
+    RealType = 3
+
+
+def generate_features_from_schema(schema: pyarrow.Schema) -> dict:
+    """generate features from schema
+
+    Args:
+        schema (pyarrow.Schema): schame of parquet table
+
+    Returns:
+        dict: features dict
+    """
+    dic = {}
+
+    def parquet_type_to_feature_type(field: pyarrow.lib.Field):
+        if field.type.id in PY_ARROW_INTEGER_TYPE:
+            return DataType.Int64ListType, StoreType.IntegerType
+        elif field.type.id in PY_ARROW_FLOAT_TYPE:
+            return DataType.Float32ListType, StoreType.RealType
+        elif field.type.id in PY_ARROW_STRING_TYPE:
+            return DataType.StringListType, StoreType.TextType
+        raise TypeError(f"{field.type} not support")
+
+    for col in schema:
+        dtype, stype = parquet_type_to_feature_type(col)
+        dic[col.name] = {"column": col.name, "dtype": dtype.value, "stype": stype.value}
+    return dic
+
+
 def generate_sqlite_ddl(schema: pyarrow.Schema, key_name: str, table_name: str) -> str:
     """generate sqlite table ddl
 
@@ -152,8 +191,7 @@ def get_table_schema(
     local_file = os.path.join(work_dir, base_name)
     wr.s3.download(path, local_file)
     table = pq.read_table(local_file)
-    schema = table.schema
-    return schema
+    return table.schema
 
 
 def parquet_to_raw_sqlite(
@@ -180,11 +218,11 @@ def parquet_to_raw_sqlite(
     base_name = os.path.basename(path)
     local_parquet_file = os.path.join(work_dir, base_name)
     db_path = os.path.join(work_dir, f"{base_name}.db")
+    bucket = "$bucket_id$"
+    ddls, dmls = [], []
     print(f"processing parquet file: {path} to sqlite: {db_path}...")
     setup_default_session(endpoint=endpoint, **kwargs)
 
-    bucket = "$bucket_id$"
-    ddls, dmls = [], []
     if os.path.exists(db_path):
         os.remove(db_path)
     if os.path.exists(local_parquet_file):
@@ -219,7 +257,6 @@ def parquet_to_raw_sqlite(
         data = tmp.to_numpy()
         cur.executemany(dmls[i], data)
         conn.commit()
-        del tmp
     cur.close()
     conn.close()
     print(f"finish processing parquet file: {path} to sqlite: {db_path}")
@@ -344,11 +381,11 @@ def r_listfiles(
     """list the file on oss/s3
 
     Args:
-        path (str): _description_
-        endpoint (str, optional): _description_. Defaults to "".
+        path (str): remote oss/s3 dir
+        endpoint (str, optional): endpoint of oss/s3. Defaults to "".
 
     Returns:
-        List[str]: _description_
+        List[str]: files in remote dir
     """
     setup_default_session(endpoint=endpoint, **kwargs)
     s3path = r_s3path(path)
@@ -388,8 +425,7 @@ def build_table(
     output_files = []
     for i in range(partitions):
         index_str = "{:0>5d}".format(i)
-        local_path = os.path.join(output_dir, f"{index_str}.db")
-        output_files.append(local_path)
+        output_files.append(os.path.join(output_dir, f"{index_str}.db"))
         pool.submit(
             build_table_partition,
             output_dir,
@@ -405,7 +441,7 @@ def build_table(
 
 def to_magicdb(
     work_dir: str,
-    worker: int,
+    workers: int,
     hive_table_dir: str,
     s3_data_dir: str,
     s3_meta_dir: str,
@@ -419,7 +455,7 @@ def to_magicdb(
 
     Args:
         work_dir (str): current work dir
-        worker (int): work number to process
+        workers (int): work number to process
         hive_table_dir (str): hvie table path
         s3_data_dir (str): magicdb table data path
         s3_meta_dir (str): magicdb table meta path
@@ -434,11 +470,18 @@ def to_magicdb(
     setup_default_session(endpoint=endpoint, **kwargs)
     timestamp = int(time.time())
     work_dir = os.path.join(work_dir, str(timestamp))
-    if os.path.exists(work_dir):
-        shutil.rmtree(work_dir)
     _raw_sqlite_dir = os.path.join(work_dir, "_sqlite")
     _bash_dir = os.path.join(work_dir, "_bash")
     table_dir = os.path.join(work_dir, "sqlite")
+
+    remote_dir = os.path.join(r_s3path(s3_data_dir), str(timestamp))
+    version = f"{table_name}.json@{timestamp}"
+    local_meta_file = os.path.join(work_dir, f"{table_name}.json")
+    remote_meta_file = os.path.join(r_s3path(s3_meta_dir), version)
+
+    if os.path.exists(work_dir):
+        shutil.rmtree(work_dir)
+
     os.makedirs(work_dir)
     os.makedirs(_raw_sqlite_dir)
     os.makedirs(_bash_dir)
@@ -457,45 +500,40 @@ def to_magicdb(
         output_dir=_raw_sqlite_dir,
         key_name=key_name,
         table_name=table_name,
-        worker=worker,
+        worker=workers,
         partitions=partitions,
         endpoint=endpoint,
         **kwargs,
     )
 
-    build_table(
+    partition_files = build_table(
         table_name=table_name,
         ddl=ddl,
         input_files=raw_sqlite_files,
         output_dir=table_dir,
         bash_dir=_bash_dir,
         partitions=partitions,
-        worker=worker,
+        worker=workers,
     )
 
-    remote_dir = os.path.join(r_s3path(s3_data_dir), str(timestamp))
     remote_paths = []
-    for i in range(partitions):
-        index_str = "{:0>5d}".format(i)
-        base_name = f"{index_str}.db"
-        local_path = os.path.join(table_dir, base_name)
+    for pfile in partition_files:
+        base_name = os.path.basename(pfile)
         remote_path = os.path.join(remote_dir, base_name)
         remote_paths.append(remote_path)
-        wr.s3.upload(local_file=local_path, path=remote_path)
+        wr.s3.upload(local_file=pfile, path=remote_path)
 
     data = {
-        "table": table_name,
-        "timestamp": timestamp,
+        "name": table_name,
         "partitions": remote_paths,
+        "key": key_name,
+        "version": version,
+        "features": generate_features_from_schema(schema=schema),
     }
-    local_meta_file = os.path.join(work_dir, f"{table_name}.json")
-    version = f"{table_name}.json@{timestamp}"
-    remote_meta_file = os.path.join(r_s3path(s3_meta_dir), version)
+
     json.dump(data, open(local_meta_file, "w"))
-
-    # upload meta file
     wr.s3.upload(local_file=local_meta_file, path=remote_meta_file)
-
+    shutil.rmtree(work_dir)
     return version
 
 

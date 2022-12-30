@@ -1,12 +1,13 @@
 #!/usr/bin/python3
 # -*- coding: UTF-8 -*-
 """
-desc: ACID of etcd keys of magicdb
+desc: magicdb client to update ectd keys
 author: timepi
 """
 import json
+from typing import List, Tuple
+
 import etcd3
-from typing import Tuple, List
 
 
 class MagicDBEtcdClient:
@@ -28,7 +29,7 @@ class MagicDBEtcdClient:
         resp = self.client.get_response(key=self.db_key(database))
         return resp.count >= 1
 
-    def create_database(self, database: str, properties: dict) -> Tuple[int, str]:
+    def create_database(self, database: str, properties: dict) -> Tuple[bool, str]:
         values = json.dumps(
             {
                 "name": database,
@@ -50,7 +51,7 @@ class MagicDBEtcdClient:
                 self.client.put(key=self.db_key(database), value=values)
         return status, msg
 
-    def drop_database(self, database: str) -> Tuple[int, str]:
+    def drop_database(self, database: str) -> Tuple[bool, str]:
         db_key = self.db_key(database)
         status, msg = True, "success"
         with self.client.lock(self.locker, ttl=10):
@@ -86,7 +87,7 @@ class MagicDBEtcdClient:
         info = self.get_db_info(database)
         return info.get("machines", [])
 
-    def add_machine(self, database: str, machine: str) -> Tuple[int, str]:
+    def add_machine(self, database: str, machine: str) -> Tuple[bool, str]:
         machine_key = self.machine_key(machine)
         db_key = self.db_key(database)
         status, msg = True, "success"
@@ -103,7 +104,7 @@ class MagicDBEtcdClient:
                 )
         return status, msg
 
-    def delete_machine(self, database: str, machine: str) -> Tuple[int, str]:
+    def delete_machine(self, database: str, machine: str) -> Tuple[bool, str]:
         machine_key = self.machine_key(machine)
         db_key = self.db_key(database)
         status, msg = True, "success"
@@ -128,7 +129,7 @@ class MagicDBEtcdClient:
         resp = self.client.get_response(key=self.table_key(database, table))
         return resp.count >= 1
 
-    def drop_table(self, database: str, table: str) -> Tuple[int, str]:
+    def drop_table(self, database: str, table: str) -> Tuple[bool, str]:
         db_key = self.db_key(database)
         table_key = self.table_key(database, table)
         status, msg = True, "success"
@@ -155,7 +156,7 @@ class MagicDBEtcdClient:
 
     def create_table(
         self, database: str, table: str, properties: dict
-    ) -> Tuple[int, str]:
+    ) -> Tuple[bool, str]:
         status, msg = True, "success"
         db_key = self.db_key(database)
         table_key = self.table_key(database, table)
@@ -195,7 +196,7 @@ class MagicDBEtcdClient:
         info = self.get_table_info(database, table)
         return info.get("current_version", "nil")
 
-    def add_version(self, database: str, table: str, version: str) -> Tuple[int, str]:
+    def add_version(self, database: str, table: str, version: str) -> Tuple[bool, str]:
         status, msg = True, "success"
         table_key = self.table_key(database, table)
         with self.client.lock(self.locker, ttl=10):
@@ -212,7 +213,7 @@ class MagicDBEtcdClient:
 
     def update_current_version(
         self, database: str, table: str, version: str
-    ) -> Tuple[int, str]:
+    ) -> Tuple[bool, str]:
         status, msg = True, "success"
         table_key = self.table_key(database, table)
         with self.client.lock(self.name, ttl=10):
@@ -228,7 +229,7 @@ class MagicDBEtcdClient:
                     self.client.put(table_key, json.dumps(table_info))
         return status, msg
 
-    def drop_version(self, database: str, table: str, version: str) -> Tuple[int, str]:
+    def drop_version(self, database: str, table: str, version: str) -> Tuple[bool, str]:
         status, msg = True, "success"
         table_key = self.table_key(database, table)
         with self.client.lock(self.locker, ttl=10):
