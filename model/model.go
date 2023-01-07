@@ -32,7 +32,8 @@ type Feature struct {
 }
 
 type Machine struct {
-	DataBase string `json:"database" toml:"database"`
+	Namespace string `json:"namespace" toml:"namespace"`
+	DataBase  string `json:"database" toml:"database"`
 }
 
 type DataBase struct {
@@ -101,10 +102,10 @@ func GetMachineKey() string {
 	return fmt.Sprintf("/magicdb/storage/machines/%s", ip)
 }
 
-func GetDataBaseKey(database string) string {
-	return fmt.Sprintf("/magicdb/storage/databases/%s", database)
+func GetDataBaseKey(name string, database string) string {
+	return fmt.Sprintf("/magicdb/%s/storage/databases/%s", name, database)
 }
 
-func GetTableKey(database string, table string) string {
-	return fmt.Sprintf("/magicdb/storage/databases/%s/%s", database, table)
+func GetTableKey(name string, database string, table string) string {
+	return fmt.Sprintf("/magicdb/%s/storage/databases/%s/%s", name, database, table)
 }

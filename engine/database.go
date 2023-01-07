@@ -16,7 +16,8 @@ import (
 const TableCurrentVersionIsNil = "nil"
 
 type DataBase struct {
-	name         string
+	database     string
+	namespace    string
 	client       *clientv3.Client
 	status       *EngineStatus
 	remoteLocker *Locker
@@ -26,14 +27,15 @@ type DataBase struct {
 	stop         chan bool
 }
 
-func NewDataBase(name string, client *clientv3.Client) *DataBase {
+func NewDataBase(namespace string, database string, client *clientv3.Client) *DataBase {
 	db := DataBase{
-		name:         name,
+		database:     database,
+		namespace:    namespace,
 		client:       client,
 		tables:       make(map[string]*Table),
 		status:       NewEngineStatus(),
 		version:      0,
-		remoteLocker: NewLocker(client, name),
+		remoteLocker: NewLocker(client, fmt.Sprintf("%s/%s", namespace, database)),
 		localLocker:  new(sync.RWMutex),
 		stop:         make(chan bool, 1),
 	}
@@ -43,7 +45,7 @@ func NewDataBase(name string, client *clientv3.Client) *DataBase {
 }
 
 func (db *DataBase) getDataBaseInfo() (*model.DataBase, int64) {
-	key := model.GetDataBaseKey(db.name)
+	key := model.GetDataBaseKey(db.namespace, db.database)
 	msg, version := getEtcdValueAndVersion(key, db.client)
 
 	if msg != nil {
@@ -59,7 +61,7 @@ func (db *DataBase) getDataBaseInfo() (*model.DataBase, int64) {
 }
 
 func (db *DataBase) getTableInfo(name string) (*model.Table, int64) {
-	key := model.GetTableKey(db.name, name)
+	key := model.GetTableKey(db.namespace, db.database, name)
 	msg, version := getEtcdValueAndVersion(key, db.client)
 
 	if msg != nil {
@@ -82,7 +84,7 @@ func (db *DataBase) addTable(table string) {
 }
 
 func (db *DataBase) getName() string {
-	return db.name
+	return db.database
 }
 
 func (db *DataBase) delTable(table string) {
@@ -170,7 +172,7 @@ func (db *DataBase) updateTable(dbInfo *model.DataBase, name string) {
 	defer stat.End()
 	tableInfo, tableVersion := db.getTableInfo(name)
 
-	if tableVersion == KEY_NOT_EXISTS {
+	if tableVersion == ETCD_EMPTY_KEY {
 		db.delTable(name)
 		zlog.LOG.Info(fmt.Sprintf("delete table: %s", name))
 		stat.MarkErr()
@@ -220,8 +222,8 @@ func (db *DataBase) updateTable(dbInfo *model.DataBase, name string) {
 func (db *DataBase) updateDataBase(dbInfo *model.DataBase, version int64) {
 	stat := prome.NewStat("DataBase.updateDataBase")
 	defer stat.End()
-	if version == KEY_NOT_EXISTS {
-		db.stop = true
+	if version == ETCD_EMPTY_KEY {
+		db.stop <- true
 		zlog.LOG.Info("DataBase.updateDataBase.stop")
 		return
 	}

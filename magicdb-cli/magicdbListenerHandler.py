@@ -15,6 +15,16 @@ from magicdbListener import magicdbListener
 from magicdbLoad import to_magicdb
 from magicdbParser import magicdbParser
 
+ENGINE_NAMESPACE = ""
+
+
+def set_engine_namespace(namespace: str):
+    ENGINE_NAMESPACE = namespace
+
+
+def get_engine_namespace() -> str:
+    return ENGINE_NAMESPACE
+
 
 class MagicDBListenerHandler(magicdbListener):
     def __init__(self, etcd_client: MagicDBEtcdClient) -> None:
@@ -104,7 +114,8 @@ class MagicDBListenerHandler(magicdbListener):
         items = table_str.split(".")
         database, table = items[0], items[1]
         version = ctx.STRING().getText()[1:-1]
-        _, msg = self.etcd_client.update_current_version(database, table, version)
+        _, msg = self.etcd_client.update_current_version(
+            database, table, version)
         print(msg)
 
     def exitDrop_version(self, ctx: magicdbParser.Drop_versionContext):
@@ -122,7 +133,8 @@ class MagicDBListenerHandler(magicdbListener):
         remote_path = ctx.STRING().getText()
         properties = self.stack.pop(-1)
         db_info = self.etcd_client.get_db_info(database=database)
-        table_info = self.etcd_client.get_table_info(database=database, table=table)
+        table_info = self.etcd_client.get_table_info(
+            database=database, table=table)
 
         boto3_kwargs = {
             "aws_access_key_id": db_info["access_key"],
@@ -133,7 +145,8 @@ class MagicDBListenerHandler(magicdbListener):
 
         version = to_magicdb(
             work_dir=properties.get(
-                "workdir", "/tmp/magicdb/%s/%s/%d" % (database, table, int(time.time()))
+                "workdir", "/tmp/magicdb/%s/%s/%d" % (
+                    database, table, int(time.time()))
             ),
             worker=properties.get("workers", max(cpu_count() - 1, 1)),
             hive_table_dir=remote_path,
@@ -160,7 +173,8 @@ class MagicDBListenerHandler(magicdbListener):
         if len(machines) == 0:
             print("err! table:`%s.%s` not serving" % (database, table))
             return
-        table_info = self.etcd_client.get_table_info(database=database, table=table)
+        table_info = self.etcd_client.get_table_info(
+            database=database, table=table)
         if table_info["key"] != field:
             print("err! not support select record using filed: %s" % field)
             return
@@ -196,7 +210,7 @@ def parse(command: str, etcd_client: MagicDBEtcdClient):
 
 if __name__ == "__main__":
     drop_database = "drop database if exists database1;"
-    create_database = 'create database if not exists database1 with properties("access_key" = "access_key","secret_key" = "secret_key","bucket"="bucket","endpoint"="endpoint","plaform"="plaform");'
+    create_database = 'create database if not exists database1 with properties("access_key" = "access_key","secret_key" = "secret_key","bucket"="bucket","endpoint"="endpoint","cloud"="s3","region"="region");'
     show_databases = "show databases;"
     add_machine = 'alter database database1 add machine("10.0.0.3");'
     show_machines = "show machines database1;"
@@ -204,7 +218,7 @@ if __name__ == "__main__":
     del_machine_2 = 'alter database database1 drop machine("10.0.0.3");'
     show_tables_1 = "show tables database1;"
     show_tables_2 = "show tables database2;"
-    create_table = 'create table database1.table1 with properties("data_path"="data_path","meta_path"="meta_path");'
+    create_table = 'create table database1.table1 with properties("data_dir"="data_path","meta_dir"="meta_path", "key"="key";'
     drop_table = "drop table if exists database1.table1;"
 
     show_versions_1 = "show versions database1.table1;"
@@ -215,7 +229,7 @@ if __name__ == "__main__":
     drop_version_1 = 'alter table database1.table1 drop version("version1");'
     drop_version_2 = 'alter table database1.table1 drop version("version2");'
     desc_table = "desc database1.table1;"
-    etcd_client = MagicDBEtcdClient("magicdb", "localhost", 2379)
+    etcd_client = MagicDBEtcdClient("test", "192.168.1.5", 2379)
 
     parse(drop_database, etcd_client)
     parse(show_databases, etcd_client)
@@ -238,7 +252,7 @@ if __name__ == "__main__":
     parse(show_versions_1, etcd_client)
     parse(show_versions_2, etcd_client)
     parse(show_current_versions, etcd_client)
-    parse(load_data, etcd_client)
+    #parse(load_data, etcd_client)
     parse(show_current_versions, etcd_client)
     parse(show_versions_1, etcd_client)
 

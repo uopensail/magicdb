@@ -16,7 +16,7 @@ import (
 
 const (
 	ttl       int64  = 5
-	namespace string = "/magicdb/engine"
+	namespace string = "/magicdb-engine"
 )
 
 var RegisterInstance *Register

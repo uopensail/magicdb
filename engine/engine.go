@@ -13,7 +13,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
-const KEY_NOT_EXISTS int64 = -1
+const ETCD_EMPTY_KEY int64 = -1
 
 type Engine struct {
 	client   *clientv3.Client
@@ -107,7 +107,7 @@ func (engine *Engine) Stop() {
 func (engine *Engine) update() {
 	info, version := engine.getEngineInfo()
 	db := engine.getDataBase()
-	if version == KEY_NOT_EXISTS {
+	if version == ETCD_EMPTY_KEY {
 		if db != nil {
 			db.close()
 			return
@@ -120,11 +120,11 @@ func (engine *Engine) update() {
 	}
 
 	engine.version = version
-	if db != nil && db.getName() == info.DataBase {
+	if db != nil && db.database == info.DataBase && db.namespace == info.Namespace {
 		return
 	}
 
-	newDB := unsafe.Pointer(NewDataBase(info.DataBase, engine.client))
+	newDB := unsafe.Pointer(NewDataBase(info.Namespace, info.DataBase, engine.client))
 	atomic.StorePointer(&engine.database, newDB)
 	if db != nil {
 		db.close()
@@ -137,7 +137,7 @@ func getEtcdValueAndVersion(key string, client *clientv3.Client) ([]byte, int64)
 	if err == nil {
 		return resp.Kvs[0].Value, resp.Kvs[0].Version
 	} else if err == rpctypes.ErrEmptyKey {
-		return nil, KEY_NOT_EXISTS
+		return nil, ETCD_EMPTY_KEY
 	} else {
 		return nil, 0
 	}

@@ -11,10 +11,10 @@ import etcd3
 
 
 class MagicDBEtcdClient:
-    def __init__(self, host: str, port: int, passwd: str = None) -> None:
+    def __init__(self, namespace: str, host: str, port: int, passwd: str = None) -> None:
         self.client = etcd3.Etcd3Client(host=host, port=port, password=passwd)
-        self.name = "magicdb/storage"
-        self.locker = "magicdb/storage/locker"
+        self.name = "magicdb/%s/storage" % namespace
+        self.locker = "magicdb/%s/storage/locker" % namespace
 
     def db_key(self, database: str) -> str:
         return "/%s/databases/%s" % (self.name, database)
@@ -72,7 +72,8 @@ class MagicDBEtcdClient:
         values = self.client.get_prefix(db_prefix)
         dbs = []
         for value in values:
-            tmp = value[1].key[len(db_prefix) + 1 :]
+            key = value[1].key.decode("utf8", "ignore")
+            tmp = key[len(db_prefix):]
             if tmp.find("/") < 0:
                 dbs.append(tmp)
         return dbs
@@ -100,7 +101,8 @@ class MagicDBEtcdClient:
                     db_info["machines"].append(machine)
                 self.client.put(db_key, json.dumps(db_info))
                 self.client.put(
-                    key=machine_key, value=json.dumps({"database": database})
+                    key=machine_key, value=json.dumps(
+                        {"database": database})
                 )
         return status, msg
 
@@ -135,7 +137,8 @@ class MagicDBEtcdClient:
         status, msg = True, "success"
         with self.client.lock(self.locker, ttl=10):
             if not self.check_table(database, table):
-                status, msg = False, "table:`%s.%s` not exists" % (database, table)
+                status, msg = False, "table:`%s.%s` not exists" % (
+                    database, table)
             else:
                 db_info = self.get_db_info(database)
                 if table in db_info["tables"]:
@@ -201,7 +204,8 @@ class MagicDBEtcdClient:
         table_key = self.table_key(database, table)
         with self.client.lock(self.locker, ttl=10):
             if not self.check_table(database, table):
-                status, msg = False, "table:`%s.%s` not exists" % (database, table)
+                status, msg = False, "table:`%s.%s` not exists" % (
+                    database, table)
             else:
                 table_info = self.get_table_info(database, table)
                 if version not in table_info["versions"]:
@@ -217,16 +221,12 @@ class MagicDBEtcdClient:
         status, msg = True, "success"
         table_key = self.table_key(database, table)
         with self.client.lock(self.name, ttl=10):
-            if not self.check_version(database, table, version):
-                print(f"table:`{database}.{table}` version:`{version}` not exists")
-                status = False
+            table_info = self.get_table_info(database, table)
+            if version not in table_info["versions"]:
+                status, msg = False, "version:%s not exists" % version
             else:
-                table_info = self.get_table_info(database, table)
-                if version not in table_info["versions"]:
-                    status, msg = False, "version:%s not exists" % version
-                else:
-                    table_info["current_version"] = version
-                    self.client.put(table_key, json.dumps(table_info))
+                table_info["current_version"] = version
+                self.client.put(table_key, json.dumps(table_info))
         return status, msg
 
     def drop_version(self, database: str, table: str, version: str) -> Tuple[bool, str]:
@@ -238,7 +238,7 @@ class MagicDBEtcdClient:
                 table_info["versions"].remove(version)
             else:
                 status, msg = False, "version:%s not exists" % version
-            if version == table_info["current_version"]:
-                table_info["current_version"] = "nil"
+            if version == table_info["current"]:
+                table_info["current"] = "nil"
             self.client.put(table_key, json.dumps(table_info))
         return status, msg

@@ -121,7 +121,8 @@ def generate_features_from_schema(schema: pyarrow.Schema) -> dict:
 
     for col in schema:
         dtype, stype = parquet_type_to_feature_type(col)
-        dic[col.name] = {"column": col.name, "dtype": dtype.value, "stype": stype.value}
+        dic[col.name] = {"column": col.name,
+                         "dtype": dtype.value, "stype": stype.value}
     return dic
 
 
@@ -236,7 +237,8 @@ def parquet_to_raw_sqlite(
         ddl = generate_sqlite_ddl(
             schema=schema, key_name=key_name, table_name=f"{table_name}_{i}"
         )
-        dml = get_sqlite_insert_sql(schema=schema, table_name=f"{table_name}_{i}")
+        dml = get_sqlite_insert_sql(
+            schema=schema, table_name=f"{table_name}_{i}")
         ddls.append(ddl)
         dmls.append(dml)
         cur.execute(ddl)
@@ -492,7 +494,8 @@ def to_magicdb(
     schema = get_table_schema(
         path=parquet_files[0], work_dir=work_dir, endpoint=endpoint, **kwargs
     )
-    ddl = generate_sqlite_ddl(schema=schema, key_name=key_name, table_name=table_name)
+    ddl = generate_sqlite_ddl(
+        schema=schema, key_name=key_name, table_name=table_name)
 
     raw_sqlite_files = parquets_to_raw_sqlites(
         schema=schema,
@@ -550,9 +553,12 @@ def main():
         "--path", type=str, required=True, help="remote path to of table"
     )
     parser.add_argument("--table", type=str, required=True, help="table name")
-    parser.add_argument("--key", type=str, required=True, help="primary key of table")
-    parser.add_argument("--access_key", type=str, default="", help="access key")
-    parser.add_argument("--secret_key", type=str, default="", help="secret key")
+    parser.add_argument("--key", type=str, required=True,
+                        help="primary key of table")
+    parser.add_argument("--access_key", type=str,
+                        default="", help="access key")
+    parser.add_argument("--secret_key", type=str,
+                        default="", help="secret key")
     parser.add_argument("--region", type=str, default="", help="region")
     parser.add_argument("--endpoint", type=str, default="", help="endpoint")
     parser.add_argument(
