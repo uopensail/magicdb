@@ -18,3 +18,5 @@ build/
 .vscode/
 
 */__pycache__/*
+*/magicdb.egg-info/*
+*/dist/*

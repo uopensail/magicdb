@@ -4,15 +4,16 @@
 desc: process commands for magicdb-cli
 author: TimePi
 """
-import sys
+from magicdb.magicdbListenerHandler import parse, set_engine_namespace
+from magicdb.magicdbEtcdClient import MagicDBEtcdClient
 import argparse
-from magicdbEtcdClient import MagicDBEtcdClient
-from magicdbListenerHandler import parse, set_engine_namespace
+import sys
+import etcd3
 
 
-def main(namespace: str, host: str, port: int, passwd: str = None):
+def process(namespace: str, host: str, port: int, passwd: str = None):
     etcd_client = MagicDBEtcdClient(namespace, host, port, passwd)
-    print(">>> ", end="", flush=True)
+    print("magicdb> ", end="", flush=True)
     command = ""
     while True:
         try:
@@ -24,15 +25,19 @@ def main(namespace: str, host: str, port: int, passwd: str = None):
                 if command == "exit;":
                     break
                 parse(command, etcd_client)
-                print(">>> ", end="", flush=True)
+                print("magicdb> ", end="", flush=True)
                 command = ""
             else:
-                print("... ", end="", flush=True)
+                print("magicdb> ", end="", flush=True)
+        except etcd3.exceptions.Etcd3Exception:
+            print("Etcd Exception Occur, Exit")
+            exit(1)
         except:
-            pass
+            print("magicdb> ", end="", flush=True)
+            command = ""
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", type=str, required=True, help="etch host")
     parser.add_argument("--port", type=int, help="etcd port", default=2379)
@@ -42,4 +47,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
     set_engine_namespace(args.name)
     host, port, passwd = args.host, args.port, args.password
-    main(args.name, host, port, passwd)
+    process(args.name, host, port, passwd)
+
+
+if __name__ == "__main__":
+    main()

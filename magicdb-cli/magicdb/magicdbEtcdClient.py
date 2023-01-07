@@ -12,7 +12,9 @@ import etcd3
 
 class MagicDBEtcdClient:
     def __init__(self, namespace: str, host: str, port: int, passwd: str = None) -> None:
-        self.client = etcd3.Etcd3Client(host=host, port=port, password=passwd)
+        self.client = etcd3.Etcd3Client(
+            host=host, port=port, password=passwd, timeout=5)
+        print(self.client.status())
         self.name = "magicdb/%s/storage" % namespace
         self.locker = "magicdb/%s/storage/locker" % namespace
 

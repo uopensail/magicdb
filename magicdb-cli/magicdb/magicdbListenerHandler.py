@@ -9,11 +9,11 @@ from multiprocessing import cpu_count
 
 import antlr4
 import requests
-from magicdbEtcdClient import MagicDBEtcdClient
-from magicdbLexer import magicdbLexer
-from magicdbListener import magicdbListener
-from magicdbLoad import to_magicdb
-from magicdbParser import magicdbParser
+from magicdb.magicdbEtcdClient import MagicDBEtcdClient
+from magicdb.magicdbLexer import magicdbLexer
+from magicdb.magicdbListener import magicdbListener
+from magicdb.magicdbLoad import to_magicdb
+from magicdb.magicdbParser import magicdbParser
 
 ENGINE_NAMESPACE = ""
 
@@ -38,6 +38,7 @@ class MagicDBListenerHandler(magicdbListener):
         print(msg)
 
     def exitShow_databases(self, ctx: magicdbParser.Show_databasesContext):
+        print("exitShow_databases")
         databases = self.etcd_client.show_databases()
         print("database list: ")
         print("[" + "\n".join(map(lambda _: f"`{_}`", databases)) + "]")
