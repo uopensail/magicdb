@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 
+	"github.com/uopensail/ulib/commonconfig"
 	"github.com/uopensail/ulib/utils"
 	"github.com/uopensail/ulib/zlog"
 	"go.uber.org/zap"
@@ -48,6 +49,17 @@ type DataBase struct {
 	SecretKey string   `json:"secret_key" toml:"secret_key"`
 }
 
+func (dbInfo *DataBase) MakeFinderConfig() commonconfig.FinderConfig {
+	return commonconfig.FinderConfig{
+		Type:      dbInfo.Cloud,
+		Timeout:   600,
+		Endpoint:  dbInfo.Endpoint,
+		Region:    dbInfo.Region,
+		AccessKey: dbInfo.AccessKey,
+		SecretKey: dbInfo.SecretKey,
+	}
+}
+
 type Table struct {
 	Name       string                 `json:"name" toml:"name"`
 	DataBase   string                 `json:"database" toml:"database"`
@@ -63,7 +75,7 @@ type Table struct {
 type Meta struct {
 	Name       string             `json:"name" toml:"name"`
 	Partitions []string           `json:"partitions" toml:"partitions"`
-	Version    int64              `json:"versions" toml:"versions"`
+	Version    string             `json:"version" toml:"version"`
 	Features   map[string]Feature `json:"features" toml:"features"`
 	Key        string             `json:"key" toml:"key"`
 }
@@ -83,18 +95,18 @@ func NewMeta(filepath string) *Meta {
 	return meta
 }
 
-func (meta *Meta) Dump(filepath string) bool {
+func (meta *Meta) Dump(filepath string) error {
 	data, err := json.Marshal(meta)
 	if err != nil {
 		zlog.LOG.Error("Meta.Dump", zap.String("data", string(data)), zap.Error(err))
-		return false
+		return err
 	}
 	err = ioutil.WriteFile(filepath, data, 0644)
 	if err != nil {
 		zlog.LOG.Error("Meta.Dump", zap.String("filepath", filepath), zap.Error(err))
-		return false
+		return err
 	}
-	return true
+	return nil
 }
 
 func GetMachineKey() string {
@@ -102,10 +114,10 @@ func GetMachineKey() string {
 	return fmt.Sprintf("/magicdb/storage/machines/%s", ip)
 }
 
-func GetDataBaseKey(name string, database string) string {
-	return fmt.Sprintf("/magicdb/%s/storage/databases/%s", name, database)
+func GetDataBaseKey(namespace, database string) string {
+	return fmt.Sprintf("/magicdb/%s/storage/databases/%s", namespace, database)
 }
 
-func GetTableKey(name string, database string, table string) string {
-	return fmt.Sprintf("/magicdb/%s/storage/databases/%s/%s", name, database, table)
+func GetTableKey(namespace, database string, table string) string {
+	return fmt.Sprintf("/magicdb/%s/storage/databases/%s/%s", namespace, database, table)
 }

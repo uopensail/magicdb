@@ -1,7 +1,7 @@
-package sqlite
+package table
 
 import (
-	"magicdb/model"
+	"magicdb/engine/model"
 
 	"github.com/uopensail/ulib/sample"
 )

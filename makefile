@@ -1,17 +1,40 @@
+CURDIR:=$(shell pwd)
+
+OS:=$(shell uname | tr '[A-Z]' '[a-z]')
+ARCH:=$(shell uname | tr '[A-Z]' '[a-z]')
 .PHONY: build clean run
 
-GITHASH := $(shell git rev-parse --short HEAD)
-GOLDFLAGS += -X app.__GITHASH__=$(GITHASH)
+GITCOMMITHASH := $(shell git rev-parse --short HEAD)
+GITBRANCHNAME := $(shell git symbolic-ref -q --short HEAD || git describe --tags --exact-match)
+GOLDFLAGS += -X handler.__GITCOMMITINFO__=$(GITCOMMITHASH).${GITBRANCHNAME}
 GOFLAGS = -ldflags "$(GOLDFLAGS)"
 
-all: build-dev
-build: clean
-	go build -o build/magicdb-server $(GOFLAGS)
-build-dev: build
-	cp -rf conf/dev build/conf
-build-prod: build
-	cp -rf conf/prod build/conf
-run: build-dev
-	./build/pangu-server -config="./build/conf"
+PUBLISHDIR=${CURDIR}/dist
+PROJECT_NAME=magicdb
+
+all: dev
+
 clean:
-	rm -rf ./build
+	rm -rf ${PUBLISHDIR}/
+	mkdir -pv ${PUBLISHDIR}/conf
+
+build: clean
+	go build -o ${PUBLISHDIR}/${PROJECT_NAME} $(GOFLAGS)
+
+pre: build
+	cp -aRf conf/$@/* ${PUBLISHDIR}/conf
+	cp run.sh ${PUBLISHDIR}/
+
+prod: build
+	cp -aRf conf/$@/* ${PUBLISHDIR}/conf
+	cp run.sh ${PUBLISHDIR}/
+
+dev: build
+	cp -aRf conf/$@/* ${PUBLISHDIR}/conf
+	cp run.sh ${PUBLISHDIR}/
+test: build
+	cp -aRf conf/$@/* ${PUBLISHDIR}/conf
+	cp run.sh ${PUBLISHDIR}/
+local: build
+	cp -aRf conf/$@/* ${PUBLISHDIR}/conf
+	cd dist && ./${PROJECT_NAME}

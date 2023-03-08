@@ -1,0 +1,11 @@
+cache_size = 100000
+[server]
+project_name = "magicdb_engine"
+grpc_port = 9527
+http_port = 9528
+prome_port = 9529
+pprof_port = 9530
+debug = true
+[server.register.etcd]
+endpoints=["127.0.0.1:2379"]
+name="sunmao"

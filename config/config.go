@@ -13,13 +13,9 @@ type EtdcConfig struct {
 }
 
 type AppConfig struct {
-	commonconfig.ServerConfig `json:",inline" toml:",inline"`
-	WorkDir                   string     `json:"work_dir" toml:"work_dir"`
-	LogDir                    string     `json:"log_dir" toml:"log_dir"`
-	UseCache                  bool       `json:"use_cache" toml:"use_cache"`
-	CacheTTL                  int64      `json:"cache_ttl" toml:"cache_ttl"`
-	CacheSize                 int        `json:"cache_size" toml:"cache_size"`
-	Etcdconfig                EtdcConfig `json:"etcd" toml:"etcd"`
+	commonconfig.ServerConfig `json:"server" toml:"server"`
+	WorkDir                   string `json:"work_dir" toml:"work_dir"`
+	CacheSize                 int    `json:"cache_size" toml:"cache_size"`
 }
 
 func (config *AppConfig) Init(configPath string) {
@@ -32,4 +28,4 @@ func (config *AppConfig) Init(configPath string) {
 	}
 }
 
-var AppConfigImp AppConfig
+var AppConfigInstance AppConfig

@@ -1,8 +1,0 @@
-cache_size = 100000
-cache_ttl = 10000
-debug = true
-grpc_port = 9527
-http_port = 9528
-log_path = '/tmp/'
-project_name = "magicdb_engine"
-prome_port = 9529
