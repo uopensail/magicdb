@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
+	etcd "github.com/go-kratos/kratos/contrib/registry/etcd/v2"
+	"github.com/go-kratos/kratos/v2/registry"
 	"github.com/uopensail/ulib/utils"
 	"github.com/uopensail/ulib/zlog"
 	"go.etcd.io/etcd/api/v3/mvccpb"
@@ -25,6 +27,7 @@ var (
 )
 
 type engineMeta struct {
+	model.Machine
 	model.DataBase
 	tables map[string]model.Table
 }
@@ -36,14 +39,13 @@ type Engine struct {
 }
 
 func NewEngine(workDir string, cacheSize int,
-	etcdCli *etcdclient.Client, reg utils.Register) *Engine {
+	etcdCli *etcdclient.Client, instance registry.ServiceInstance) *Engine {
 	eng := Engine{
 		DataBase: NewDataBase(),
 		etcdCli:  etcdCli,
 	}
-	eng.sync(workDir, cacheSize, etcdCli, reg)
+	eng.sync(workDir, cacheSize, etcdCli, instance)
 
-	eng.MetuxJobUtil = utils.NewMetuxJobUtil("TODO:", reg, etcdCli, 10, -1)
 	return &eng
 }
 
@@ -119,28 +121,104 @@ func (eng *Engine) getAllMeta(ip string) (*engineMeta, error) {
 		return nil, err
 	}
 	return &engineMeta{
+		machineMeta,
 		databaseMeta,
 		tableMetas,
 	}, nil
 }
 
-func (eng *Engine) sync(workDir string, cacheSize int,
-	etcdCli *etcdclient.Client, reg utils.Register) {
+func registerServices(etcdCli *etcdclient.Client, instance registry.ServiceInstance,
+	timeout int) (registry.Registrar, context.CancelFunc, error) {
+	if etcdCli != nil {
+		ctx1, cancel := context.WithCancel(context.Background())
+		reg := etcd.New(etcdCli, etcd.Context(ctx1))
+		if timeout <= 0 {
+			timeout = 10
+		}
+		ctx2, _ := context.WithTimeout(ctx1, time.Duration(timeout)*time.Second)
+		err := reg.Register(ctx2, &instance)
+		return reg, cancel, err
+	}
+	return nil, nil, nil
+}
 
-	job := eng.genSyncJob(workDir, cacheSize)
+func deregisterServices(cancel context.CancelFunc, reg registry.Registrar, instance registry.ServiceInstance,
+	timeout int) error {
+
+	if cancel != nil {
+		cancel()
+	}
+	if reg != nil {
+		if timeout <= 0 {
+			timeout = 10
+		}
+		ctx2, _ := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+		return reg.Deregister(ctx2, &instance)
+	}
+	return nil
+}
+
+func (eng *Engine) sync(workDir string, cacheSize int,
+	etcdCli *etcdclient.Client, instance registry.ServiceInstance) {
+
+	job, meta := eng.genJob(workDir, cacheSize)
 	if job != nil {
 		job()
+	}
+
+	//注册服务
+	var reg registry.Registrar
+	var regCancel context.CancelFunc
+	if etcdCli != nil && meta != nil {
+		var err error
+		instance.Name = model.GetDataBaseKey(meta.Namespace, meta.Machine.DataBase)
+		reg, regCancel, err = registerServices(etcdCli, instance, 10)
+		if err != nil {
+			panic(err)
+		}
 	}
 
 	go func() (string, *table.Table, error) {
 
 		ticker := time.NewTicker(time.Minute * 5)
 		defer ticker.Stop()
+		lockKey := instance.Name
+		if meta != nil {
+			lockKey = model.GetDataBaseKey(meta.Namespace, meta.Machine.DataBase)
+		}
+
+		eng.MetuxJobUtil = utils.NewMetuxJobUtil(lockKey, nil, etcdCli, 10, -1)
 		for {
 			<-ticker.C
-			job := eng.genSyncJob(workDir, cacheSize)
+			job, meta := eng.genJob(workDir, cacheSize)
+			if job == nil {
+				continue
+			}
+
+			registerJob := job
+			//如果有etcd 就需要注册和反注册
+			if etcdCli != nil {
+
+				registerJob = func() {
+					// 反注册
+					deregisterServices(regCancel, reg, instance, 20)
+					defer func() {
+						var err error
+						instance.Name = model.GetDataBaseKey(meta.Namespace, meta.Machine.DataBase)
+						reg, regCancel, err = registerServices(etcdCli, instance, 20)
+						if err != nil {
+							zlog.LOG.Error("registerServices", zap.Error(err))
+						}
+					}()
+
+					//加载job
+					job()
+
+				}
+			}
+
 			if job != nil {
-				eng.MetuxJobUtil.TryRun(job)
+				eng.MetuxJobUtil.TryRun(registerJob)
 			}
 
 		}
@@ -148,25 +226,25 @@ func (eng *Engine) sync(workDir string, cacheSize int,
 
 }
 
-func (eng *Engine) genSyncJob(workDir string, cacheSize int) func() {
+func (eng *Engine) genJob(workDir string, cacheSize int) (func(), *engineMeta) {
 
 	ip, _ := utils.GetLocalIp()
 	meta, err := eng.getAllMeta(ip)
-
+	cloneTable := eng.DataBase.CloneTable()
 	if err == MachineEmptyError {
 		//清理内存里的
-		eng.doUpdateTable(nil, nil)
-		return nil
+		eng.doUpdateTable(nil, nil, cloneTable)
+		return nil, nil
 	} else if err != nil {
 		zlog.LOG.Error("get meta error", zap.Error(err))
-		return nil
+		return nil, nil
 	}
 
-	jobs := checkLoaderJob(workDir, cacheSize, &meta.DataBase, meta.tables)
+	jobs := checkLoaderJob(workDir, cacheSize, &meta.DataBase, meta.tables, cloneTable)
 	if len(jobs) == 0 {
-		holdDirs := eng.doUpdateTable(meta.tables, nil)
+		holdDirs := eng.doUpdateTable(meta.tables, nil, cloneTable)
 		doCleanTableDir(workDir, holdDirs)
-		return nil
+		return nil, meta
 	}
 
 	return func() {
@@ -180,14 +258,14 @@ func (eng *Engine) genSyncJob(workDir string, cacheSize int) func() {
 			upsertTables[tableKey] = table
 		}
 
-		holdDirs := eng.doUpdateTable(meta.tables, upsertTables)
+		holdDirs := eng.doUpdateTable(meta.tables, upsertTables, cloneTable)
 		doCleanTableDir(workDir, holdDirs)
-	}
+	}, meta
 }
 
 func (eng *Engine) doUpdateTable(lastestTablesInfo map[string]model.Table,
-	upsertTable map[string]*table.Table) []string {
-	cloneTable := eng.DataBase.CloneTable()
+	upsertTable map[string]*table.Table, cloneTable Tables) []string {
+
 	freeList := make([]*table.Table, 0, len(cloneTable.M))
 
 	holdTableKey := make([]string, 0, len(cloneTable.M))
@@ -221,15 +299,18 @@ func (eng *Engine) doUpdateTable(lastestTablesInfo map[string]model.Table,
 type loadJob func() (string, *table.Table, error)
 type loadJobs []loadJob
 
-func checkLoaderJob(workDir string, cacheSize int, dbInfo *model.DataBase, tablesInfo map[string]model.Table) loadJobs {
+func checkLoaderJob(workDir string, cacheSize int, dbInfo *model.DataBase, tablesInfo map[string]model.Table,
+	clone Tables) loadJobs {
 	tableCacheSize := cacheSize / len(tablesInfo)
 	jobs := make(loadJobs, 0)
 	for k, v := range tablesInfo {
-		localMeta := table.GetLocalMeta(workDir, k, v.Current)
-		if localMeta == nil || localMeta.Version != localMeta.Version {
+		remoteMeta := v
+		localMeta := table.GetLocalMeta(workDir, k, remoteMeta.Current)
+		tableKey := k
+
+		if localMeta == nil || localMeta.Version != remoteMeta.Current {
 			//Download load Job
-			tableKey := k
-			remoteMeta := v
+
 			job := func() (string, *table.Table, error) {
 				tableMetaPath, err := table.Download(workDir, dbInfo, tableKey, &remoteMeta)
 				if err != nil {
@@ -242,6 +323,19 @@ func checkLoaderJob(workDir string, cacheSize int, dbInfo *model.DataBase, table
 				return tableKey, table, nil
 			}
 			jobs = append(jobs, job)
+		} else {
+			if mv, ok := clone.M[k]; !ok || mv.Meta.Version != remoteMeta.Current {
+				// open job
+				job := func() (string, *table.Table, error) {
+					localMetaFilePath := table.FormatLocalMetaFilePath(workDir, tableKey, remoteMeta.Current)
+					table := table.NewTable(localMetaFilePath, tableCacheSize)
+					if table == nil {
+						return tableKey, nil, fmt.Errorf("NewTable error path: %s", localMetaFilePath)
+					}
+					return tableKey, table, nil
+				}
+				jobs = append(jobs, job)
+			}
 		}
 	}
 	return jobs

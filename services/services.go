@@ -27,16 +27,17 @@ func NewServices() *Services {
 
 	return &srv
 }
-func (srv *Services) Init(configFolder string, etcdName string, etcdCli *etcdclient.Client, reg utils.Register) {
+func (srv *Services) Init(configFolder string, etcdCli *etcdclient.Client, instance registry.ServiceInstance) {
 	srv.etcdCli = etcdCli
 	dbEngine := engine.NewEngine(config.AppConfigInstance.WorkDir,
-		config.AppConfigInstance.CacheSize, etcdCli, reg)
+		config.AppConfigInstance.CacheSize, etcdCli, instance)
 	srv.dbEngine = dbEngine
+	srv.instance = instance
 }
 func (srv *Services) RegisterGrpc(grpcS *grpc.Server) {
 
 	mapi.RegisterMagicdbServer(grpcS, srv)
-	grpc_health_v1.RegisterHealthServer(grpcS, srv)
+	//grpc_health_v1.RegisterHealthServer(grpcS, srv)
 }
 
 func (srv *Services) RegisterGinRouter(ginEngine *gin.Engine) {

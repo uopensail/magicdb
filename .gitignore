@@ -16,6 +16,7 @@
 build/
 .idea/
 .vscode/
+dist/
 logs/
 */__pycache__/*
 */magicdb.egg-info/*

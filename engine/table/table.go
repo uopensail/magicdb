@@ -19,7 +19,7 @@ import (
 type Table struct {
 	utils.Reference
 	dbs   []*sqlx.DB
-	meta  model.Meta
+	Meta  model.Meta
 	cache gcache.Cache
 }
 
@@ -30,7 +30,7 @@ func NewTable(metaFile string, cacheSize int) *Table {
 
 	tb := &Table{
 		dbs:  make([]*sqlx.DB, len(meta.Partitions)),
-		meta: *meta,
+		Meta: *meta,
 	}
 
 	if cacheSize > 0 {
@@ -60,13 +60,13 @@ func (tb *Table) close() {
 }
 
 func (tb *Table) get(key string) *sample.Features {
-	stat := prome.NewStat(fmt.Sprintf("sqlite.table.%s.get", tb.meta.Name))
+	stat := prome.NewStat(fmt.Sprintf("sqlite.table.%s.get", tb.Meta.Name))
 	defer stat.End()
 
 	tableIndex := murmur3.Sum64([]byte(key)) % uint64(len(tb.dbs))
 	db := tb.dbs[tableIndex]
 	dest := make(map[string]interface{})
-	sql := fmt.Sprintf("select * from features where %s = '%s';", tb.meta.Key, key)
+	sql := fmt.Sprintf("select * from features where %s = '%s';", tb.Meta.Key, key)
 	err := db.QueryRowx(sql).MapScan(dest)
 	if err != nil {
 		stat.MarkErr()
@@ -77,7 +77,7 @@ func (tb *Table) get(key string) *sample.Features {
 	ret := &sample.Features{}
 	ret.Feature = make(map[string]*sample.Feature, len(dest))
 	for col, value := range dest {
-		if info, ok := tb.meta.Features[col]; ok {
+		if info, ok := tb.Meta.Features[col]; ok {
 			feature := getSampleFeature(value, &info)
 			if feature != nil {
 				ret.Feature[col] = feature

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"magicdb/services"
@@ -69,28 +68,14 @@ func GitHashHandler(gCtx *gin.Context) {
 	return
 }
 
-type kratosAppRegister struct {
-	registry.Registrar
-	*kratos.App
-}
-
-func (reg *kratosAppRegister) buildInstance() *registry.ServiceInstance {
+func buildInstance(app *kratos.App) *registry.ServiceInstance {
 	instance := registry.ServiceInstance{}
-	instance.ID = reg.App.ID()
-	instance.Name = reg.App.Name()
-	instance.Version = reg.App.Version()
-	instance.Endpoints = reg.App.Endpoint()
-	instance.Metadata = reg.App.Metadata()
+	instance.ID = app.ID()
+	instance.Name = app.Name()
+	instance.Version = app.Version()
+	instance.Endpoints = app.Endpoint()
+	instance.Metadata = app.Metadata()
 	return &instance
-}
-func (reg *kratosAppRegister) Register(ctx context.Context) error {
-	instance := reg.buildInstance()
-	return reg.Registrar.Register(ctx, instance)
-}
-
-func (reg *kratosAppRegister) Deregister(ctx context.Context) error {
-	instance := reg.buildInstance()
-	return reg.Registrar.Deregister(ctx, instance)
 }
 
 func run(configFilePath string, logDir string) *services.Services {
@@ -127,11 +112,8 @@ func run(configFilePath string, logDir string) *services.Services {
 		grpcSrv,
 	))
 	app := kratos.New(options...)
-	appReg := kratosAppRegister{
-		Registrar: reg,
-		App:       app,
-	}
-	services.Init(folder, "microservices/"+serverName, etcdCli, &appReg)
+
+	services.Init(folder, etcdCli, *buildInstance(app))
 	go func() {
 		if err := app.Run(); err != nil {
 			zlog.LOG.Fatal("run error", zap.Error(err))
