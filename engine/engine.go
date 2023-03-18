@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"magicdb/config"
 	"magicdb/engine/model"
 	"magicdb/engine/table"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	etcd "github.com/go-kratos/kratos/contrib/registry/etcd/v2"
@@ -38,13 +40,12 @@ type Engine struct {
 	*utils.MetuxJobUtil
 }
 
-func NewEngine(workDir string, cacheSize int,
-	etcdCli *etcdclient.Client, instance registry.ServiceInstance) *Engine {
+func NewEngine(etcdCli *etcdclient.Client, instance registry.ServiceInstance) *Engine {
 	eng := Engine{
 		DataBase: NewDataBase(),
 		etcdCli:  etcdCli,
 	}
-	eng.sync(workDir, cacheSize, etcdCli, instance)
+	eng.sync(etcdCli, instance)
 
 	return &eng
 }
@@ -87,9 +88,9 @@ func (eng *Engine) getEtcdPrefixValue(key string, decode func(kv *mvccpb.KeyValu
 	return nil
 }
 
-func (eng *Engine) getAllMeta(ip string) (*engineMeta, error) {
+func (eng *Engine) getAllMeta(url string) (*engineMeta, error) {
 	//
-	machineKey := model.GetMachineKey()
+	machineKey := model.GetMachineKey(url)
 	machineMeta := model.Machine{}
 	err := eng.getEtcdValue(machineKey, func(kv *mvccpb.KeyValue) error {
 		return json.Unmarshal(kv.Value, &machineMeta)
@@ -158,10 +159,10 @@ func deregisterServices(cancel context.CancelFunc, reg registry.Registrar, insta
 	return nil
 }
 
-func (eng *Engine) sync(workDir string, cacheSize int,
-	etcdCli *etcdclient.Client, instance registry.ServiceInstance) {
-
-	job, meta := eng.genJob(workDir, cacheSize)
+func (eng *Engine) sync(etcdCli *etcdclient.Client, instance registry.ServiceInstance) {
+	workDir := config.AppConfigInstance.WorkDir
+	cacheSize := config.AppConfigInstance.CacheSize
+	job, meta := eng.genJob(workDir, cacheSize, config.AppConfigInstance.HTTPPort)
 	if job != nil {
 		job()
 	}
@@ -190,7 +191,7 @@ func (eng *Engine) sync(workDir string, cacheSize int,
 		eng.MetuxJobUtil = utils.NewMetuxJobUtil(lockKey, nil, etcdCli, 10, -1)
 		for {
 			<-ticker.C
-			job, meta := eng.genJob(workDir, cacheSize)
+			job, meta := eng.genJob(workDir, cacheSize, config.AppConfigInstance.HTTPPort)
 			if job == nil {
 				continue
 			}
@@ -226,10 +227,10 @@ func (eng *Engine) sync(workDir string, cacheSize int,
 
 }
 
-func (eng *Engine) genJob(workDir string, cacheSize int) (func(), *engineMeta) {
+func (eng *Engine) genJob(workDir string, cacheSize int, httpPort int) (func(), *engineMeta) {
 
 	ip, _ := utils.GetLocalIp()
-	meta, err := eng.getAllMeta(ip)
+	meta, err := eng.getAllMeta(fmt.Sprintf("%s:%d", ip, httpPort))
 	cloneTable := eng.DataBase.CloneTable()
 	if err == MachineEmptyError {
 		//清理内存里的
@@ -276,7 +277,7 @@ func (eng *Engine) doUpdateTable(lastestTablesInfo map[string]model.Table,
 		}
 		cloneTable.M[k] = newTable
 
-		holdTableKey = append(holdTableKey, k)
+		holdTableKey = append(holdTableKey, filepath.Join(k, newTable.Meta.Version))
 	}
 
 	for k, v := range cloneTable.M {
@@ -285,7 +286,7 @@ func (eng *Engine) doUpdateTable(lastestTablesInfo map[string]model.Table,
 			delete(cloneTable.M, k)
 			freeList = append(freeList, v)
 		}
-		holdTableKey = append(holdTableKey, k)
+		holdTableKey = append(holdTableKey, filepath.Join(k, v.Meta.Version))
 	}
 	eng.DataBase.StoreTable(&cloneTable)
 
@@ -350,11 +351,15 @@ func doCleanTableDir(rootDir string, holdDirList []string) {
 		if err != nil {
 			return err
 		}
-		if info.IsDir() {
-			if _, ok := holdDirs[path]; ok {
-				zlog.LOG.Info("os.RemoveAll", zap.String("path", path))
-				os.RemoveAll(path)
+		if info.IsDir() == false {
+			if strings.HasSuffix(path, "meta.mark.json") {
+				baseDir := filepath.Base(path)
+				if _, ok := holdDirs[baseDir]; ok {
+					zlog.LOG.Info("os.RemoveAll", zap.String("path", baseDir))
+					os.RemoveAll(baseDir)
+				}
 			}
+
 		}
 		return nil
 	})

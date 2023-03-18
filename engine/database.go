@@ -40,7 +40,7 @@ func (db *DataBase) CloneTable() Tables {
 func (db *DataBase) StoreTable(tables *Tables) {
 	var unsafepL = (*unsafe.Pointer)(unsafe.Pointer(&db.TBs))
 	// Storing value to the pointer
-	atomic.StorePointer(unsafepL, unsafe.Pointer(&tables))
+	atomic.StorePointer(unsafepL, unsafe.Pointer(tables))
 
 }
 

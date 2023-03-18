@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"strings"
 
 	"github.com/uopensail/ulib/commonconfig"
-	"github.com/uopensail/ulib/utils"
 	"github.com/uopensail/ulib/zlog"
 	"go.uber.org/zap"
 )
@@ -40,7 +40,6 @@ type Machine struct {
 type DataBase struct {
 	Machines  []string `json:"machines" toml:"machines"`
 	Name      string   `json:"name" toml:"name"`
-	Cloud     string   `json:"cloud" toml:"cloud"`
 	Bucket    string   `json:"bucket" toml:"bucket"`
 	Tables    []string `json:"tables" toml:"tables"`
 	Endpoint  string   `json:"endpoint" toml:"endpoint"`
@@ -50,14 +49,19 @@ type DataBase struct {
 }
 
 func (dbInfo *DataBase) MakeFinderConfig() commonconfig.FinderConfig {
-	return commonconfig.FinderConfig{
-		Type:      dbInfo.Cloud,
+	c := commonconfig.FinderConfig{
 		Timeout:   600,
 		Endpoint:  dbInfo.Endpoint,
 		Region:    dbInfo.Region,
 		AccessKey: dbInfo.AccessKey,
 		SecretKey: dbInfo.SecretKey,
 	}
+	if strings.HasPrefix(dbInfo.Bucket, "s3") {
+		c.Type = "s3"
+	} else if strings.HasPrefix(dbInfo.Bucket, "oss") {
+		c.Type = "oss"
+	}
+	return c
 }
 
 type Table struct {
@@ -66,7 +70,7 @@ type Table struct {
 	DataDir    string                 `json:"data" toml:"data"`
 	MetaDir    string                 `json:"meta" toml:"meta"`
 	Versions   []string               `json:"versions" toml:"versions"`
-	Current    string                 `json:"current" toml:"current"`
+	Current    string                 `json:"current_version" toml:"current_version"`
 	Partitions int                    `json:"partitions" toml:"partitions"`
 	Key        string                 `json:"key" toml:"key"`
 	Properties map[string]interface{} `json:"properties" toml:"properties"`
@@ -109,9 +113,9 @@ func (meta *Meta) Dump(filepath string) error {
 	return nil
 }
 
-func GetMachineKey() string {
-	ip, _ := utils.GetLocalIp()
-	return fmt.Sprintf("/magicdb/storage/machines/%s", ip)
+func GetMachineKey(url string) string {
+
+	return fmt.Sprintf("/magicdb/storage/machines/%s", url)
 }
 
 func GetDataBaseKey(namespace, database string) string {

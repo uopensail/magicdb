@@ -66,7 +66,7 @@ func (tb *Table) get(key string) *sample.Features {
 	tableIndex := murmur3.Sum64([]byte(key)) % uint64(len(tb.dbs))
 	db := tb.dbs[tableIndex]
 	dest := make(map[string]interface{})
-	sql := fmt.Sprintf("select * from features where %s = '%s';", tb.Meta.Key, key)
+	sql := fmt.Sprintf("select * from %s where %s = '%s';", tb.Meta.Name, tb.Meta.Key, key)
 	err := db.QueryRowx(sql).MapScan(dest)
 	if err != nil {
 		stat.MarkErr()

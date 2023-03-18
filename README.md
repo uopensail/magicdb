@@ -46,9 +46,8 @@ magicdb-engine/magicdb-cli用到了如下的一些技术:
 //path: /magicdb/storage/databases/${db}
 {
     "machines":["ip1","ip2", "ip3"],
-    "cloud":"s3",
     "name": "db1",
-    "bucket": "bucket",
+    "bucket": "s3://bucket",
     "endpoint": "xxx.xxx.xxxx",
     "access_key": "xxxxx",
     "secret_key": "xxxxxx",
@@ -62,7 +61,7 @@ magicdb-engine/magicdb-cli用到了如下的一些技术:
     "database":"db1",
     "data": "data_dir",
     "meta": "meta_dir",
-    "current": "xxxxx",
+    "current_version": "xxxxx",
     "versions": ["v1", "v2", "v3"],
     "partitions": 100,
     "key":"pk",

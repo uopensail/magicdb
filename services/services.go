@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"magicdb/config"
 	"magicdb/engine"
 	"magicdb/mapi"
 
@@ -29,8 +28,7 @@ func NewServices() *Services {
 }
 func (srv *Services) Init(configFolder string, etcdCli *etcdclient.Client, instance registry.ServiceInstance) {
 	srv.etcdCli = etcdCli
-	dbEngine := engine.NewEngine(config.AppConfigInstance.WorkDir,
-		config.AppConfigInstance.CacheSize, etcdCli, instance)
+	dbEngine := engine.NewEngine(etcdCli, instance)
 	srv.dbEngine = dbEngine
 	srv.instance = instance
 }
