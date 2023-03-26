@@ -1,12 +1,9 @@
 package engine
 
 import (
-	"fmt"
 	"magicdb/engine/table"
 	"sync/atomic"
 	"unsafe"
-
-	"github.com/uopensail/ulib/sample"
 )
 
 const TableCurrentVersionIsNil = "nil"
@@ -44,46 +41,49 @@ func (db *DataBase) StoreTable(tables *Tables) {
 
 }
 
-func (db *DataBase) Get(key string, tables []string) *sample.Features {
+func (db *DataBase) Get(key string, tables []string) []Fields {
 	tbs := db.TBs
 
-	tableResult := make(map[string]*sample.Features, len(tables))
-
+	rets := make([]Fields, 0, len(tables))
 	for i := 0; i < len(tables); i++ {
+
 		tableKey := tables[i]
+		fields := Fields{
+			TableName: tableKey,
+		}
+
+		rets = append(rets, fields)
 		if table, ok := tbs.M[tableKey]; ok {
+			fields.Column = table.Column
 			if table != nil {
-				tableResult[tableKey] = table.Get(key)
+				fields.FieldsValue = table.Get(key)
 			}
 		}
 	}
 
-	ret := sample.Features{}
-	ret.Feature = make(map[string]*sample.Feature)
-	for tableKey, features := range tableResult {
-		for featureName, feature := range features.Feature {
-			ret.Feature[fmt.Sprintf("%s/%s", tableKey, featureName)] = feature
-		}
-	}
-	return &ret
+	return rets
 }
 
-func (db *DataBase) GetAll(key string) *sample.Features {
+type Fields struct {
+	TableName string
+	Column    []string
+	table.FieldsValue
+}
+
+func (db *DataBase) GetAll(key string) []Fields {
 	tbs := db.TBs
+	rets := make([]Fields, 0, len(tbs.M))
 
-	tableResult := make(map[string]*sample.Features)
 	for tableKey, table := range tbs.M {
-		if table != nil {
-			tableResult[tableKey] = table.Get(key)
+		fields := Fields{
+			TableName: tableKey,
+			Column:    table.Column,
 		}
+		if table != nil {
+			fields.FieldsValue = table.Get(key)
+		}
+		rets = append(rets, fields)
 	}
 
-	ret := sample.Features{}
-	ret.Feature = make(map[string]*sample.Feature)
-	for tableKey, features := range tableResult {
-		for featureName, feature := range features.Feature {
-			ret.Feature[fmt.Sprintf("%s/%s", tableKey, featureName)] = feature
-		}
-	}
-	return &ret
+	return rets
 }

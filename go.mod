@@ -4,12 +4,11 @@ go 1.14
 
 require (
 	github.com/BurntSushi/toml v1.1.0
-	github.com/bluele/gcache v0.0.2
+	github.com/VictoriaMetrics/fastcache v1.12.1
 	github.com/gin-gonic/gin v1.9.0
 	github.com/go-kratos/kratos/contrib/registry/etcd/v2 v2.0.0-20220506134428-091ba2dae75b
 	github.com/go-kratos/kratos/v2 v2.2.2
 	github.com/go-sql-driver/mysql v1.6.0 // indirect
-	github.com/golang/protobuf v1.5.2
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/lib/pq v1.10.2 // indirect

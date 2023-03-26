@@ -77,11 +77,11 @@ type Table struct {
 }
 
 type Meta struct {
-	Name       string             `json:"name" toml:"name"`
-	Partitions []string           `json:"partitions" toml:"partitions"`
-	Version    string             `json:"version" toml:"version"`
-	Features   map[string]Feature `json:"features" toml:"features"`
-	Key        string             `json:"key" toml:"key"`
+	Name       string    `json:"name" toml:"name"`
+	Partitions []string  `json:"partitions" toml:"partitions"`
+	Version    string    `json:"version" toml:"version"`
+	Features   []Feature `json:"features" toml:"features"`
+	Key        string    `json:"key" toml:"key"`
 }
 
 func NewMeta(filepath string) *Meta {

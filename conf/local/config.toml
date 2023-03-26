@@ -1,5 +1,5 @@
 cache_size = 100000
-work_dir = "/tmp"
+work_dir = "/tmp/magicdb"
 [server]
 project_name = "magicdb_engine"
 grpc_port = 6527

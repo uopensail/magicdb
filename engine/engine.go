@@ -353,8 +353,8 @@ func doCleanTableDir(rootDir string, holdDirList []string) {
 		}
 		if info.IsDir() == false {
 			if strings.HasSuffix(path, "meta.mark.json") {
-				baseDir := filepath.Base(path)
-				if _, ok := holdDirs[baseDir]; ok {
+				baseDir := filepath.Dir(path)
+				if _, ok := holdDirs[baseDir]; !ok {
 					zlog.LOG.Info("os.RemoveAll", zap.String("path", baseDir))
 					os.RemoveAll(baseDir)
 				}
