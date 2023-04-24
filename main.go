@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"magicdb/services"
+	"strings"
 
 	"net/http"
 	_ "net/http/pprof"
@@ -19,6 +20,8 @@ import (
 	"github.com/go-kratos/kratos/v2/registry"
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
@@ -79,7 +82,6 @@ func buildInstance(app *kratos.App) *registry.ServiceInstance {
 }
 
 func run(configFilePath string, logDir string) *services.Services {
-	config.AppConfigInstance.Init(configFilePath)
 	folder := path.Dir(configFilePath)
 	zlog.InitLogger(config.AppConfigInstance.ProjectName, config.AppConfigInstance.Debug, logDir)
 
@@ -105,7 +107,7 @@ func run(configFilePath string, logDir string) *services.Services {
 	serverName := config.AppConfigInstance.ServerConfig.Name
 	services := services.NewServices()
 	grpcSrv := newGRPC(services.RegisterGrpc)
-	httpSrv := newHTTPServe(services.RegisterGinRouter)
+	httpSrv := newHTTPServe(config.AppConfigInstance.ProjectName, services.RegisterGinRouter)
 
 	options = append(options, kratos.Name(serverName), kratos.Version(__GITCOMMITINFO__), kratos.Server(
 		httpSrv,
@@ -123,7 +125,19 @@ func run(configFilePath string, logDir string) *services.Services {
 	return services
 }
 
-func newHTTPServe(registerFunc func(*gin.Engine)) *khttp.Server {
+func registerProme(projectName string, ginEngine *gin.Engine) {
+	promeExport := prome.NewExporter(projectName)
+	err := prometheus.Register(promeExport)
+
+	if err != nil {
+		zlog.LOG.Error("register prometheus fail ", zap.Error(err))
+		return
+	}
+	ginEngine.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+}
+
+func newHTTPServe(projectName string, registerFunc func(*gin.Engine)) *khttp.Server {
 	ginEngine := gin.New()
 	ginEngine.Use(gin.Recovery())
 
@@ -132,6 +146,7 @@ func newHTTPServe(registerFunc func(*gin.Engine)) *khttp.Server {
 
 	ginEngine.GET("/ping", PingPongHandler)
 	ginEngine.GET("/git_hash", GitHashHandler)
+	registerProme(projectName, ginEngine)
 
 	registerFunc(ginEngine)
 	httpSrv := khttp.NewServer(khttp.Address(fmt.Sprintf(":%d", config.AppConfigInstance.ServerConfig.HttpServerConfig.HTTPPort)))
@@ -159,17 +174,28 @@ func runPProf(port int) {
 	}
 }
 
-func runProme(projectName string, port int) *prome.Exporter {
-	//prome的打点
-	promeExport := prome.NewExporter(projectName)
-	go func() {
-		err := promeExport.Start(port)
-		if err != nil {
-			panic(err)
-		}
-	}()
+func pathExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+func initConfig(configFilePath string, httpPort, grpcPort int, projectName, endpoints string) {
+	if ok, _ := pathExists(configFilePath); ok {
+		config.AppConfigInstance.Init(configFilePath)
+	} else {
+		config.AppConfigInstance.Debug = false
+		config.AppConfigInstance.HTTPPort = httpPort
+		config.AppConfigInstance.GRPCPort = grpcPort
+		config.AppConfigInstance.Endpoints = strings.Split(endpoints, ",")
+		config.AppConfigInstance.Name = projectName
+		config.AppConfigInstance.ServerConfig.ProjectName = projectName
+	}
 
-	return promeExport
 }
 
 // @title Swagger Example API
@@ -191,9 +217,14 @@ func runProme(projectName string, port int) *prome.Exporter {
 
 func main() {
 	configFilePath := flag.String("config", "conf/config.toml", "启动命令请设置配置文件目录")
-	logDir := flag.String("log", "./logs", "启动命令请设置seelog.xml")
-	flag.Parse()
+	logDir := flag.String("log", "./logs", "log dir")
+	projectName := flag.String("name", "magicdb", "server name, example: 'magicdb_engine")
+	httpPort := flag.Int("http-port", 6528, "set http api port")
+	grpcPort := flag.Int("grpc-port", 6527, "set grpc api port")
+	etcdEndpoint := flag.String("endpoints", "127.0.0.1:2379", "etcd endpoints example: '1.1.1.1:2379,2.2.2.2:2379'")
 
+	flag.Parse()
+	initConfig(*configFilePath, *httpPort, *grpcPort, *projectName, *etcdEndpoint)
 	application := run(*configFilePath, *logDir)
 
 	if len(config.AppConfigInstance.ProjectName) <= 0 {
@@ -203,12 +234,11 @@ func main() {
 	runPProf(config.AppConfigInstance.PProfPort)
 
 	//prome的打点
-	promeExport := runProme(config.AppConfigInstance.ProjectName, config.AppConfigInstance.PromePort)
 	signalChanel := make(chan os.Signal, 1)
 	signal.Notify(signalChanel, syscall.SIGINT, syscall.SIGTERM)
 	fmt.Println(time.Now().Format("2006-01-02 15:04:05"), " app running....")
 	<-signalChanel
 	application.Close()
-	promeExport.Close()
+
 	fmt.Println(time.Now().Format("2006-01-02 15:04:05"), " app exit....")
 }

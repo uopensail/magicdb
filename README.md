@@ -8,8 +8,6 @@ magicdb-cli是管理的客户端, 可以通过该工具进行数据管理，包�
 ## magicdb-engine
 magicdb-engine是数据服务, 根据配置信息对外提供服务。
 
-## Tutorials
-[read this tutorials.md](tutorials.md)
 ## Install
 
 ## Design and Architecture

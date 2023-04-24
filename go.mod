@@ -13,6 +13,7 @@ require (
 	github.com/jmoiron/sqlx v1.3.4
 	github.com/lib/pq v1.10.2 // indirect
 	github.com/mattn/go-sqlite3 v1.14.12
+	github.com/prometheus/client_golang v1.11.1
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/swaggo/files v1.0.0
 	github.com/swaggo/gin-swagger v1.5.3
