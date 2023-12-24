@@ -8,8 +8,6 @@ magicdb-cli是管理的客户端, 可以通过该工具进行数据管理，包�
 ## magicdb-engine
 magicdb-engine是数据服务, 根据配置信息对外提供服务。
 
-## Tutorials
-[read this tutorials.md](tutorials.md)
 ## Install
 
 ## Design and Architecture
@@ -46,9 +44,8 @@ magicdb-engine/magicdb-cli用到了如下的一些技术:
 //path: /magicdb/storage/databases/${db}
 {
     "machines":["ip1","ip2", "ip3"],
-    "cloud":"s3",
     "name": "db1",
-    "bucket": "bucket",
+    "bucket": "s3://bucket",
     "endpoint": "xxx.xxx.xxxx",
     "access_key": "xxxxx",
     "secret_key": "xxxxxx",
@@ -62,7 +59,7 @@ magicdb-engine/magicdb-cli用到了如下的一些技术:
     "database":"db1",
     "data": "data_dir",
     "meta": "meta_dir",
-    "current": "xxxxx",
+    "current_version": "xxxxx",
     "versions": ["v1", "v2", "v3"],
     "partitions": 100,
     "key":"pk",

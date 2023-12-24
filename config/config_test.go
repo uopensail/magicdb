@@ -7,7 +7,7 @@ import (
 )
 
 func TestConfig_Init(t *testing.T) {
-	AppConfigImp.Init("../conf/dev/config.toml")
-	data, _ := json.MarshalIndent(AppConfigImp, " ", " ")
+	AppConfigInstance.Init("../conf/dev/config.toml")
+	data, _ := json.MarshalIndent(AppConfigInstance, " ", " ")
 	fmt.Print(string(data))
 }
