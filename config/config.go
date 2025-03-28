@@ -1,31 +1,39 @@
 package config
 
 import (
-	"io/ioutil"
+	"os"
 
 	"github.com/BurntSushi/toml"
 	"github.com/uopensail/ulib/commonconfig"
+	"go.uber.org/zap"
 )
 
-type EtdcConfig struct {
-	Address []string `json:"address" toml:"address"`
-	TTL     int      `json:"ttl" toml:"ttl"`
-}
-
+// AppConfig holds the application configuration, including server and database settings.
 type AppConfig struct {
-	commonconfig.ServerConfig `json:"server" toml:"server"`
-	WorkDir                   string `json:"work_dir" toml:"work_dir"`
-	CacheSize                 int    `json:"cache_size" toml:"cache_size"`
+	commonconfig.ServerConfig `json:"server" toml:"server"` // Common server configuration
+	DataBaseConfig            string                        `json:"db_config" toml:"db_config"` // Path to database configuration file
 }
 
-func (config *AppConfig) Init(configPath string) {
-	data, err := ioutil.ReadFile(configPath)
+// Init initializes the AppConfig instance by loading configuration from the specified path.
+// It returns an error if the configuration cannot be loaded or parsed.
+func (config *AppConfig) Init(configPath string) error {
+	// Read the configuration file
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		panic(err)
+		// Log error and return
+		zap.L().Error("Failed to read config file", zap.String("path", configPath), zap.Error(err))
+		return err
 	}
-	if _, err = toml.Decode(string(data), config); err != nil {
-		panic(err)
+
+	// Decode TOML data into the config structure
+	if _, err := toml.Decode(string(data), config); err != nil {
+		// Log error and return
+		zap.L().Error("Failed to parse TOML config", zap.String("path", configPath), zap.Error(err))
+		return err
 	}
+
+	return nil
 }
 
+// AppConfigInstance is the singleton instance for application configuration.
 var AppConfigInstance AppConfig

@@ -1,127 +1,55 @@
 package model
 
 import (
-	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"strings"
+	"os"
 
-	"github.com/uopensail/ulib/commonconfig"
-	"github.com/uopensail/ulib/zlog"
+	"github.com/BurntSushi/toml"
 	"go.uber.org/zap"
 )
 
-type DataType int
-type StoreType int
-
-const (
-	StringListType DataType = iota + 1
-	Int64ListType
-	Float32ListType
-)
-
-const (
-	TextType StoreType = iota + 1
-	IntegerType
-	RealType
-)
-
-type Feature struct {
-	Column    string    `json:"column" toml:"column"`
-	DataType  DataType  `json:"dtype" toml:"dtype"`
-	StoreType StoreType `json:"stype" toml:"stype"`
-}
-
-type Machine struct {
-	Namespace string `json:"namespace" toml:"namespace"`
-	DataBase  string `json:"database" toml:"database"`
-}
-
+// DataBase represents a database configuration, including its name, working directory, and associated tables.
 type DataBase struct {
-	Machines  []string `json:"machines" toml:"machines"`
-	Name      string   `json:"name" toml:"name"`
-	Bucket    string   `json:"bucket" toml:"bucket"`
-	Tables    []string `json:"tables" toml:"tables"`
-	Endpoint  string   `json:"endpoint" toml:"endpoint"`
-	Region    string   `json:"region" toml:"region"`
-	AccessKey string   `json:"access_key" toml:"access_key"`
-	SecretKey string   `json:"secret_key" toml:"secret_key"`
+	Name    string  `json:"name" toml:"name" yaml:"name"`          // Database name
+	Workdir string  `json:"workdir" toml:"workdir" yaml:"workdir"` // Directory where the database operates
+	Tables  []Table `json:"tables" toml:"tables" yaml:"tables"`    // List of tables in the database
 }
 
-func (dbInfo *DataBase) MakeFinderConfig() commonconfig.FinderConfig {
-	c := commonconfig.FinderConfig{
-		Timeout:   600,
-		Endpoint:  dbInfo.Endpoint,
-		Region:    dbInfo.Region,
-		AccessKey: dbInfo.AccessKey,
-		SecretKey: dbInfo.SecretKey,
-	}
-	if strings.HasPrefix(dbInfo.Bucket, "s3") {
-		c.Type = "s3"
-	} else if strings.HasPrefix(dbInfo.Bucket, "oss") {
-		c.Type = "oss"
-	}
-	return c
-}
-
+// Table represents a single table in the database, including its name, data directory, and version.
 type Table struct {
-	Name       string                 `json:"name" toml:"name"`
-	DataBase   string                 `json:"database" toml:"database"`
-	DataDir    string                 `json:"data" toml:"data"`
-	MetaDir    string                 `json:"meta" toml:"meta"`
-	Versions   []string               `json:"versions" toml:"versions"`
-	Current    string                 `json:"current_version" toml:"current_version"`
-	Partitions int                    `json:"partitions" toml:"partitions"`
-	Key        string                 `json:"key" toml:"key"`
-	Properties map[string]interface{} `json:"properties" toml:"properties"`
+	Name    string `json:"name" toml:"name" yaml:"name"`          // Table name
+	DataDir string `json:"data" toml:"data" yaml:"data"`          // Directory where table data is stored
+	Version string `json:"version" toml:"version" yaml:"version"` // Table version
 }
 
-type Meta struct {
-	Name       string    `json:"name" toml:"name"`
-	Partitions []string  `json:"partitions" toml:"partitions"`
-	Version    string    `json:"version" toml:"version"`
-	Features   []Feature `json:"features" toml:"features"`
-	Key        string    `json:"key" toml:"key"`
-}
-
-func NewMeta(filepath string) *Meta {
-	fileData, err := ioutil.ReadFile(filepath)
+// LoadDataBaseConfig reads a TOML configuration file and unmarshals it into a DataBase struct.
+// Returns the DataBase instance and an error if any occurred.
+func LoadDataBaseConfig(configPath string) (*DataBase, error) {
+	// Read the configuration file
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		zlog.LOG.Error("NewMeta", zap.String("filepath", filepath), zap.Error(err))
-		return nil
+		// Log error and return
+		zap.L().Error("Failed to read config file", zap.String("path", configPath), zap.Error(err))
+		return nil, err
 	}
-	meta := &Meta{}
-	err = json.Unmarshal(fileData, meta)
-	if err != nil {
-		zlog.LOG.Error("NewMeta", zap.String("data", string(fileData)), zap.Error(err))
-		return nil
-	}
-	return meta
+
+	// Parse the configuration data
+	return parseDataBaseConfig(string(data), configPath)
 }
 
-func (meta *Meta) Dump(filepath string) error {
-	data, err := json.Marshal(meta)
-	if err != nil {
-		zlog.LOG.Error("Meta.Dump", zap.String("data", string(data)), zap.Error(err))
-		return err
+// parseDataBaseConfig parses the TOML configuration string into a DataBase instance.
+// It separates the parsing logic to make testing and debugging easier.
+func parseDataBaseConfig(configData, configPath string) (*DataBase, error) {
+	var config DataBase
+
+	// Decode TOML data into the config structure
+	if _, err := toml.Decode(configData, &config); err != nil {
+		// Log error and return
+		zap.L().Error("Failed to parse TOML config", zap.String("path", configPath), zap.Error(err))
+		return nil, err
 	}
-	err = ioutil.WriteFile(filepath, data, 0644)
-	if err != nil {
-		zlog.LOG.Error("Meta.Dump", zap.String("filepath", filepath), zap.Error(err))
-		return err
-	}
-	return nil
-}
 
-func GetMachineKey(url string) string {
+	// Log success
+	zap.L().Info("Successfully loaded database configuration", zap.String("path", configPath))
 
-	return fmt.Sprintf("/magicdb/storage/machines/%s", url)
-}
-
-func GetDataBaseKey(namespace, database string) string {
-	return fmt.Sprintf("/magicdb/%s/storage/databases/%s", namespace, database)
-}
-
-func GetTableKey(namespace, database string, table string) string {
-	return fmt.Sprintf("/magicdb/%s/storage/databases/%s/%s", namespace, database, table)
+	return &config, nil
 }

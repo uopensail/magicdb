@@ -1,25 +1,19 @@
 syntax = "proto3";
 package api;
 
-option  go_package=".;mapi";
-message Request{
+option go_package = ".;mapi";
+
+message Request {
   string key = 1;
   repeated string tables = 2;
 }
 
-message Fields {
-  string table =1;
-  repeated string column =2;
-  bytes field_value=3;
-}
-
-message Response{
+message Response {
   int32 code = 1;
   string msg = 2;
-  repeated Fields features = 3;
+  bytes data = 3;
 }
 
-service magicdb{
+service magicdb {
   rpc Get(Request) returns (Response) {}
 }
-

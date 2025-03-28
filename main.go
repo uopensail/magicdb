@@ -3,47 +3,35 @@ package main
 import (
 	"flag"
 	"fmt"
+	"magicdb/engine"
+	"magicdb/engine/model"
 	"magicdb/services"
-	"strings"
-
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/signal"
-	"path"
 	"syscall"
 	"time"
 
-	etcd "github.com/go-kratos/kratos/contrib/registry/etcd/v2"
 	"github.com/go-kratos/kratos/v2"
 	"github.com/go-kratos/kratos/v2/middleware/recovery"
-	"github.com/go-kratos/kratos/v2/registry"
 	kgrpc "github.com/go-kratos/kratos/v2/transport/grpc"
 	khttp "github.com/go-kratos/kratos/v2/transport/http"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
-
 	"google.golang.org/grpc"
-
-	"github.com/gin-gonic/gin"
 
 	"magicdb/config"
 
+	"github.com/gin-gonic/gin"
 	"github.com/uopensail/ulib/prome"
 	"github.com/uopensail/ulib/zlog"
-	etcdclient "go.etcd.io/etcd/client/v3"
 )
 
 var __GITCOMMITINFO__ = ""
 
-// PingPongHandler @Summary 获取标签列表
-// @BasePath /
-// @Produce  json
-// @Success 200 {object} model.StatusResponse
-// @Router /ping [get]
+// PingPongHandler provides a simple health check endpoint.
 func PingPongHandler(gCtx *gin.Context) {
 	pStat := prome.NewStat("PingPongHandler")
 	defer pStat.End()
@@ -55,125 +43,117 @@ func PingPongHandler(gCtx *gin.Context) {
 		Code: 0,
 		Msg:  "PONG",
 	})
-	return
 }
 
-// @Summary 获取标签列表
-// @BasePath /
-// @Produce  json
-// @Success 200 {object} model.StatusResponse
-// @Router /git_hash [get]
+// GitHashHandler returns the current git commit hash of the service.
 func GitHashHandler(gCtx *gin.Context) {
 	pStat := prome.NewStat("GitHashHandler")
 	defer pStat.End()
 
 	gCtx.String(http.StatusOK, "git_info:"+__GITCOMMITINFO__)
-	return
 }
 
-func buildInstance(app *kratos.App) *registry.ServiceInstance {
-	instance := registry.ServiceInstance{}
-	instance.ID = app.ID()
-	instance.Name = app.Name()
-	instance.Version = app.Version()
-	instance.Endpoints = app.Endpoint()
-	instance.Metadata = app.Metadata()
-	return &instance
-}
-
-func run(configFilePath string, logDir string) *services.Services {
-	folder := path.Dir(configFilePath)
+// run initializes and starts the services (HTTP and gRPC).
+func run(logDir string) *services.Services {
+	// Initialize the logger
 	zlog.InitLogger(config.AppConfigInstance.ProjectName, config.AppConfigInstance.Debug, logDir)
 
-	var etcdCli *etcdclient.Client
-	if len(config.AppConfigInstance.ServerConfig.Endpoints) > 0 {
-		client, err := etcdclient.New(etcdclient.Config{
-			Endpoints: config.AppConfigInstance.ServerConfig.Endpoints,
-		})
-		if err != nil {
-			zlog.LOG.Fatal("etcd error", zap.Error(err))
-		} else {
-			etcdCli = client
-		}
+	// Load database configuration
+	dbConfig, err := model.LoadDataBaseConfig(config.AppConfigInstance.DataBaseConfig)
+	if err != nil {
+		zlog.LOG.Warn("Failed to load database configuration", zap.Error(err))
 	}
 
-	options := make([]kratos.Option, 0)
-	var reg registry.Registrar
-
-	if etcdCli != nil {
-		reg = etcd.New(etcdCli)
-		options = append(options, kratos.Registrar(reg))
+	// Initialize the database
+	var db *engine.DataBase
+	if dbConfig != nil {
+		db = engine.NewDataBase(dbConfig)
 	}
-	serverName := config.AppConfigInstance.ServerConfig.Name
-	services := services.NewServices()
+
+	// Initialize services
+	services := services.NewServices(db)
 	grpcSrv := newGRPC(services.RegisterGrpc)
 	httpSrv := newHTTPServe(config.AppConfigInstance.ProjectName, services.RegisterGinRouter)
 
-	options = append(options, kratos.Name(serverName), kratos.Version(__GITCOMMITINFO__), kratos.Server(
-		httpSrv,
-		grpcSrv,
-	))
+	// Create and start the application
+	options := []kratos.Option{
+		kratos.Name(config.AppConfigInstance.ServerConfig.Name),
+		kratos.Version(__GITCOMMITINFO__),
+		kratos.Server(httpSrv, grpcSrv),
+	}
 	app := kratos.New(options...)
 
-	services.Init(folder, etcdCli, *buildInstance(app))
 	go func() {
 		if err := app.Run(); err != nil {
-			zlog.LOG.Fatal("run error", zap.Error(err))
+			zlog.LOG.Fatal("Application run error", zap.Error(err))
 		}
 	}()
 
 	return services
 }
 
+// registerProme registers Prometheus metrics handler.
 func registerProme(projectName string, ginEngine *gin.Engine) {
 	promeExport := prome.NewExporter(projectName)
-	err := prometheus.Register(promeExport)
-
-	if err != nil {
-		zlog.LOG.Error("register prometheus fail ", zap.Error(err))
+	if err := prometheus.Register(promeExport); err != nil {
+		zlog.LOG.Error("Failed to register Prometheus exporter", zap.Error(err))
 		return
 	}
 	ginEngine.GET("/metrics", gin.WrapH(promhttp.Handler()))
-
 }
 
+// newHTTPServe creates a new HTTP server and registers routes.
 func newHTTPServe(projectName string, registerFunc func(*gin.Engine)) *khttp.Server {
 	ginEngine := gin.New()
 	ginEngine.Use(gin.Recovery())
 
-	url := ginSwagger.URL(fmt.Sprintf("swagger/doc.json")) // The url pointing to API definition
-	ginEngine.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler, url))
-
+	// Register default routes
 	ginEngine.GET("/ping", PingPongHandler)
 	ginEngine.GET("/git_hash", GitHashHandler)
 	registerProme(projectName, ginEngine)
 
+	// Register custom routes
 	registerFunc(ginEngine)
+
+	// Create HTTP server
 	httpSrv := khttp.NewServer(khttp.Address(fmt.Sprintf(":%d", config.AppConfigInstance.ServerConfig.HttpServerConfig.HTTPPort)))
 	httpSrv.HandlePrefix("/", ginEngine)
 	return httpSrv
 }
 
+// newGRPC creates a new gRPC server.
 func newGRPC(registerFunc func(server *grpc.Server)) *kgrpc.Server {
 	grpcSrv := kgrpc.NewServer(
-		kgrpc.Address(fmt.Sprintf(":%d",
-			config.AppConfigInstance.ServerConfig.GRPCPort)),
-		kgrpc.Middleware(
-			recovery.Recovery(),
-		),
+		kgrpc.Address(fmt.Sprintf(":%d", config.AppConfigInstance.ServerConfig.GRPCPort)),
+		kgrpc.Middleware(recovery.Recovery()),
 	)
 	registerFunc(grpcSrv.Server)
 	return grpcSrv
 }
 
+// runPProf starts the PProf server for performance profiling.
 func runPProf(port int) {
-	if port > 0 {
-		go func() {
-			fmt.Println(http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), nil))
-		}()
+	if port <= 0 {
+		zlog.LOG.Warn("PProf port is not set or invalid, skipping PProf setup")
+		return
+	}
+	go func() {
+		if err := http.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), nil); err != nil {
+			zlog.LOG.Error("Failed to start PProf server", zap.Error(err))
+		}
+	}()
+}
+
+// initConfig initializes the application configuration.
+func initConfig(configFilePath string) {
+	if ok, _ := pathExists(configFilePath); ok {
+		config.AppConfigInstance.Init(configFilePath)
+	} else {
+		panic(fmt.Sprintf("Configuration file not found: %s", configFilePath))
 	}
 }
 
+// pathExists checks if a file or directory exists.
 func pathExists(path string) (bool, error) {
 	_, err := os.Stat(path)
 	if err == nil {
@@ -184,61 +164,30 @@ func pathExists(path string) (bool, error) {
 	}
 	return false, err
 }
-func initConfig(configFilePath string, httpPort, grpcPort int, projectName, endpoints string) {
-	if ok, _ := pathExists(configFilePath); ok {
-		config.AppConfigInstance.Init(configFilePath)
-	} else {
-		config.AppConfigInstance.Debug = false
-		config.AppConfigInstance.HTTPPort = httpPort
-		config.AppConfigInstance.GRPCPort = grpcPort
-		config.AppConfigInstance.Endpoints = strings.Split(endpoints, ",")
-		config.AppConfigInstance.Name = projectName
-		config.AppConfigInstance.ServerConfig.ProjectName = projectName
-	}
 
-}
-
-// @title Swagger Example API
-// @version 1.0
-// @description This is a sample server Petstore server.
-// @termsOfService http://swagger.io/terms/
-
-// @contact.name API Support
-// @contact.url http://www.swagger.io/support
-// @contact.email support@swagger.io
-
-// @license.name Apache 2.0
-// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
-// @BasePath /api/v1
-
-// @securityDefinitions.apikey ApiKeyAuth
-// @in header
-// @name Authorization
-
+// main is the entry point of the application.
 func main() {
-	configFilePath := flag.String("config", "conf/config.toml", "启动命令请设置配置文件目录")
-	logDir := flag.String("log", "./logs", "log dir")
-	projectName := flag.String("name", "magicdb", "server name, example: 'magicdb_engine")
-	httpPort := flag.Int("http-port", 6528, "set http api port")
-	grpcPort := flag.Int("grpc-port", 6527, "set grpc api port")
-	etcdEndpoint := flag.String("endpoints", "127.0.0.1:2379", "etcd endpoints example: '1.1.1.1:2379,2.2.2.2:2379'")
-
+	// Parse command-line arguments
+	configFilePath := flag.String("config", "conf/local/config.toml", "Path to the configuration file")
+	logDir := flag.String("log", "./logs", "Log directory")
 	flag.Parse()
-	initConfig(*configFilePath, *httpPort, *grpcPort, *projectName, *etcdEndpoint)
-	application := run(*configFilePath, *logDir)
 
-	if len(config.AppConfigInstance.ProjectName) <= 0 {
-		panic("config.ProjectName NULL")
-	}
+	// Initialize configuration
+	initConfig(*configFilePath)
 
+	// Start the application
+	application := run(*logDir)
+
+	// Start PProf if enabled
 	runPProf(config.AppConfigInstance.PProfPort)
 
-	//prome的打点
-	signalChanel := make(chan os.Signal, 1)
-	signal.Notify(signalChanel, syscall.SIGINT, syscall.SIGTERM)
-	fmt.Println(time.Now().Format("2006-01-02 15:04:05"), " app running....")
-	<-signalChanel
-	application.Close()
+	// Handle OS signals for graceful shutdown
+	signalChannel := make(chan os.Signal, 1)
+	signal.Notify(signalChannel, syscall.SIGINT, syscall.SIGTERM)
+	fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "Application running...")
+	<-signalChannel
 
-	fmt.Println(time.Now().Format("2006-01-02 15:04:05"), " app exit....")
+	// Shutdown the application
+	application.Close()
+	fmt.Println(time.Now().Format("2006-01-02 15:04:05"), "Application exited")
 }

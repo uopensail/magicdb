@@ -6,7 +6,7 @@ import (
 )
 
 func Test_main(t *testing.T) {
-	run("./conf/local/config.toml", "./logs")
-
+	initConfig("conf/local/config.toml")
+	run("./logs")
 	select {}
 }
